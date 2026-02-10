@@ -1,6 +1,6 @@
 """Step execution engine for Dynamic Ralph.
 
-Launches Claude Code agents for individual workflow steps, streams their output,
+Launches agent backends for individual workflow steps, streams their output,
 captures metrics, processes workflow edits, and handles success/failure/timeout.
 """
 
@@ -12,14 +12,12 @@ import os
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from multi_agent.constants import GIT_EMAIL, RALPH_IMAGE
-from multi_agent.docker import build_image, docker_sock_gid, image_exists
+from multi_agent.backend import AgentResult, get_backend
 from multi_agent.prompts import BASE_AGENT_INSTRUCTIONS
-from multi_agent.stream import display_event
+from multi_agent.stream import display_agent_event
 from multi_agent.workflow.editing import (
     EditValidationError,
     apply_edits,
@@ -45,25 +43,6 @@ from multi_agent.workflow.steps import STEP_TIMEOUTS
 
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# AgentResult dataclass
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class AgentResult:
-    """Captures all outputs from a Claude Code agent invocation."""
-
-    exit_code: int = 1
-    num_turns: int = 0
-    cost_usd: float = 0.0
-    input_tokens: int = 0
-    output_tokens: int = 0
-    completion_status: str = 'unknown'
-    final_response: str = ''
-    timed_out: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -148,83 +127,37 @@ def _launch_agent(
     log_path: Path,
     timeout: int,
 ) -> AgentResult:
-    """Launch Claude Code and stream its output, returning an AgentResult.
+    """Launch an agent backend and stream its output, returning an AgentResult.
 
-    When already inside Docker (``/.dockerenv`` exists), runs Claude Code
+    Uses the configured backend (via ``get_backend()``) to build commands,
+    parse events, and extract results.
+
+    When already inside Docker (``/.dockerenv`` exists), runs the agent
     directly.  Otherwise wraps the invocation in a ``docker run`` command
-    using the same pattern as ``bin/run_dynamic_ralph.py``.
+    using the backend's ``build_docker_command`` method.
     """
-    # -- build the claude command ------------------------------------------------
-    claude_cmd: list[str] = [
-        'npx',
-        '@anthropic-ai/claude-code',
-        '--dangerously-skip-permissions',
-        '--print',
-        '--verbose',
-        '--output-format',
-        'stream-json',
-        '--append-system-prompt',
-        BASE_AGENT_INSTRUCTIONS,
-    ]
-    if max_turns is not None:
-        claude_cmd.extend(['--max-turns', str(max_turns)])
-    claude_cmd.append(prompt)
+    backend = get_backend()
+
+    # -- build the agent command ------------------------------------------------
+    base_cmd = backend.build_command(
+        prompt,
+        system_prompt=BASE_AGENT_INSTRUCTIONS,
+        max_turns=max_turns,
+    )
 
     # -- wrap in docker if needed ------------------------------------------------
     if _is_inside_docker():
-        cmd = claude_cmd
+        cmd = base_cmd
     else:
-        if not image_exists():
-            build_image()
-
         workspace = os.getcwd()
-        compose_project = f'ralph_agent_{agent_id}'
-        claude_config = Path.home() / '.claude'
-        host_config_claude = Path.home() / '.config' / 'claude'
-
-        cmd = [
-            'docker',
-            'run',
-            '--rm',
-            '--group-add',
-            docker_sock_gid(),
-            '-e',
-            f'AGENT_ID={agent_id}',
-            '-e',
-            f'COMPOSE_PROJECT_NAME={compose_project}',
-            '-e',
-            f'HOST_WORKSPACE={workspace}',
-            '-e',
-            'IS_SANDBOX=1',
-            '-e',
-            'UV_PROJECT_ENVIRONMENT=/tmp/venv',
-            '-e',
-            'GIT_AUTHOR_NAME=Claude Agent',
-            '-e',
-            f'GIT_AUTHOR_EMAIL={GIT_EMAIL}',
-            '-e',
-            'GIT_COMMITTER_NAME=Claude Agent',
-            '-e',
-            f'GIT_COMMITTER_EMAIL={GIT_EMAIL}',
-            '-v',
-            '/var/run/docker.sock:/var/run/docker.sock',
-            '-v',
-            f'{workspace}:/workspace',
-            '-v',
-            '/workspace/.venv',  # anonymous volume: hide host .venv
-            '-v',
-            f'{claude_config}:/home/agent/.claude',
-            '-v',
-            f'{host_config_claude}:/home/agent/.config/claude',
-            '-w',
-            '/workspace',
-            RALPH_IMAGE,
-            *claude_cmd,
-        ]
+        cmd = backend.build_docker_command(
+            base_cmd,
+            agent_id=agent_id,
+            workspace=workspace,
+        )
 
     # -- launch and stream -------------------------------------------------------
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    result = AgentResult()
 
     process = subprocess.Popen(
         cmd,
@@ -235,11 +168,18 @@ def _launch_agent(
     )
 
     log_file = open(log_path, 'w')
-    last_assistant_text: str = ''
+    all_events = []
     start_time = time.monotonic()
+    timed_out = False
 
     try:
-        for line in process.stdout:  # type: ignore[union-attr]
+
+        def _line_iter():
+            """Yield lines from process stdout."""
+            for line in process.stdout:  # type: ignore[union-attr]
+                yield line
+
+        for event in backend.parse_events(_line_iter()):
             # -- timeout check ---------------------------------------------------
             elapsed = time.monotonic() - start_time
             if elapsed > timeout:
@@ -253,49 +193,26 @@ def _launch_agent(
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()
-                result.timed_out = True
+                timed_out = True
                 break
 
-            raw_line = line.rstrip('\n')
-            stripped = raw_line.strip()
-            if not stripped:
-                continue
+            all_events.append(event)
+            display_agent_event(event)
 
-            try:
-                event = json.loads(stripped)
-                display_event(event)
-
-                # write raw JSON to log
-                log_file.write(raw_line + '\n')
-                log_file.flush()
-
-                etype = event.get('type', '')
-
-                if etype == 'result':
-                    result.num_turns = event.get('num_turns', 0)
-                    result.cost_usd = event.get('total_cost_usd', 0.0)
-                    result.input_tokens = event.get('input_tokens', 0)
-                    result.output_tokens = event.get('output_tokens', 0)
-                    result.completion_status = event.get('subtype', 'unknown')
-
-                elif etype == 'assistant':
-                    # Capture the last assistant text block for summary extraction
-                    message = event.get('message', {})
-                    for block in message.get('content', []):
-                        if block.get('type') == 'text':
-                            last_assistant_text = block.get('text', '')
-
-            except json.JSONDecodeError:
-                print(stripped, file=sys.stderr)
-                log_file.write(f'# {raw_line}\n')
-                log_file.flush()
+            # write raw JSON to log (if event has raw data)
+            if event.raw:
+                log_file.write(json.dumps(event.raw) + '\n')
+            else:
+                log_file.write(f'# {event.text}\n')
+            log_file.flush()
 
         process.wait()
-        result.exit_code = process.returncode or 0
     finally:
         log_file.close()
 
-    result.final_response = last_assistant_text
+    exit_code = process.returncode or 0
+    result = backend.extract_result(all_events, exit_code)
+    result.timed_out = timed_out
     return result
 
 

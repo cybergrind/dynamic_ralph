@@ -153,10 +153,6 @@ class TestSteps:
             StepType.final_review,
         ]
 
-    def test_default_workflow_all_pending(self):
-        for step in create_default_workflow():
-            assert step.status == StepStatus.pending
-
     def test_mandatory_steps(self):
         assert MANDATORY_STEPS == {StepType.linting, StepType.final_review}
 

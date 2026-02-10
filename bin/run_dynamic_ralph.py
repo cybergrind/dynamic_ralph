@@ -8,7 +8,6 @@ Supports three modes:
 """
 
 import argparse
-import json
 import logging
 import os
 import shutil
@@ -21,14 +20,12 @@ from pathlib import Path
 
 from multi_agent import (
     BASE_AGENT_INSTRUCTIONS,
-    RALPH_IMAGE,
     append_progress,
     build_image,
-    display_event,
-    docker_sock_gid,
     image_exists,
 )
-from multi_agent.constants import GIT_EMAIL
+from multi_agent.backend import get_backend
+from multi_agent.stream import display_agent_event
 from multi_agent.workflow.editing import (
     EditValidationError,
     apply_edits,
@@ -148,7 +145,10 @@ def _extract_summary(text: str) -> str | None:
 def _run_agent_docker(
     task: str, agent_id: int, max_turns: int | None, workspace: str | None = None, shared_dir: str | None = None
 ) -> tuple[int, dict]:
-    """Launch Claude Code in a Docker container and stream events.
+    """Launch an agent in a Docker container and stream events.
+
+    Uses the configured backend (via ``get_backend()``) to build commands,
+    parse events, and extract results.
 
     Returns (returncode, result_info) where result_info contains cost/token data
     from the final 'result' event plus the last assistant text for summary extraction.
@@ -156,74 +156,19 @@ def _run_agent_docker(
     if workspace is None:
         workspace = os.getcwd()
 
-    compose_project = f'ralph_agent_{agent_id}'
-    claude_config = Path.home() / '.claude'
-    host_config_claude = Path.home() / '.config' / 'claude'
+    backend = get_backend()
 
-    claude_cmd = [
-        'npx',
-        '@anthropic-ai/claude-code',
-        '--dangerously-skip-permissions',
-        '--print',
-        '--verbose',
-        '--output-format',
-        'stream-json',
-        '--append-system-prompt',
-        BASE_AGENT_INSTRUCTIONS,
-    ]
-    if max_turns is not None:
-        claude_cmd.extend(['--max-turns', str(max_turns)])
-    claude_cmd.append(task)
+    base_cmd = backend.build_command(
+        task,
+        system_prompt=BASE_AGENT_INSTRUCTIONS,
+        max_turns=max_turns,
+    )
 
-    env_vars = [
-        '-e',
-        f'AGENT_ID={agent_id}',
-        '-e',
-        f'COMPOSE_PROJECT_NAME={compose_project}',
-        '-e',
-        f'HOST_WORKSPACE={workspace}',
-        '-e',
-        'IS_SANDBOX=1',
-        '-e',
-        'UV_PROJECT_ENVIRONMENT=/tmp/venv',
-        '-e',
-        'GIT_AUTHOR_NAME=Claude Agent',
-        '-e',
-        f'GIT_AUTHOR_EMAIL={GIT_EMAIL}',
-        '-e',
-        'GIT_COMMITTER_NAME=Claude Agent',
-        '-e',
-        f'GIT_COMMITTER_EMAIL={GIT_EMAIL}',
-    ]
-
-    if shared_dir is not None:
-        env_vars.extend(['-e', f'RALPH_SHARED_DIR={shared_dir}'])
-
-    docker_cmd = [
-        'docker',
-        'run',
-        '--rm',
-        '--group-add',
-        docker_sock_gid(),
-        *env_vars,
-        '-v',
-        '/var/run/docker.sock:/var/run/docker.sock',
-        '-v',
-        f'{workspace}:/workspace',
-        '-v',
-        '/workspace/.venv',  # anonymous volume: hide host .venv
-        '-v',
-        f'{claude_config}:/home/agent/.claude',
-        '-v',
-        f'{host_config_claude}:/home/agent/.config/claude',
-        '-w',
-        '/workspace',
-        RALPH_IMAGE,
-        *claude_cmd,
-    ]
-
-    result_info: dict = {}
-    last_assistant_text: str = ''
+    docker_cmd = backend.build_docker_command(
+        base_cmd,
+        agent_id=agent_id,
+        workspace=workspace,
+    )
 
     process = subprocess.Popen(
         docker_cmd,
@@ -233,31 +178,26 @@ def _run_agent_docker(
         bufsize=1,
     )
 
-    for line in process.stdout:  # type: ignore[union-attr]
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            event = json.loads(line)
-            display_event(event)
-            etype = event.get('type', '')
-            if etype == 'result':
-                result_info = {
-                    'cost_usd': event.get('total_cost_usd'),
-                    'num_turns': event.get('num_turns'),
-                    'input_tokens': event.get('usage', {}).get('input_tokens'),
-                    'output_tokens': event.get('usage', {}).get('output_tokens'),
-                }
-            elif etype == 'assistant':
-                message = event.get('message', {})
-                for block in message.get('content', []):
-                    if block.get('type') == 'text':
-                        last_assistant_text = block.get('text', '')
-        except json.JSONDecodeError:
-            print(line, file=sys.stderr)
+    def _line_iter():
+        for line in process.stdout:  # type: ignore[union-attr]
+            yield line
+
+    all_events = []
+    for event in backend.parse_events(_line_iter()):
+        all_events.append(event)
+        display_agent_event(event)
 
     process.wait()
-    result_info['last_assistant_text'] = last_assistant_text
+
+    agent_result = backend.extract_result(all_events, process.returncode or 0)
+
+    result_info: dict = {
+        'cost_usd': agent_result.cost_usd,
+        'num_turns': agent_result.num_turns,
+        'input_tokens': agent_result.input_tokens,
+        'output_tokens': agent_result.output_tokens,
+        'last_assistant_text': agent_result.final_response,
+    }
     return process.returncode, result_info
 
 

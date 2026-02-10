@@ -1,7 +1,9 @@
 """Shared code for the ralph multi-agent workflow."""
 
+from multi_agent.backend import AgentBackend, AgentEvent, AgentResult, get_backend
 from multi_agent.compose import compose, compose_bare, geodb_volume
 from multi_agent.constants import (
+    AGENT_BACKEND,
     COMPOSE_FILE,
     ENV_FILE,
     GEODB_FILE,
@@ -16,10 +18,11 @@ from multi_agent.models import FlatStory, Prd, UserStory, parse_prd
 from multi_agent.prd import find_next_story, load_prd, load_prd_model, save_prd
 from multi_agent.progress import append_progress
 from multi_agent.prompts import BASE_AGENT_INSTRUCTIONS, PREPARE_SYSTEM_PROMPT
-from multi_agent.stream import display_event
+from multi_agent.stream import display_agent_event, display_event
 
 
 __all__ = [
+    'AGENT_BACKEND',
     'BASE_AGENT_INSTRUCTIONS',
     'COMPOSE_FILE',
     'ENV_FILE',
@@ -29,6 +32,9 @@ __all__ = [
     'PREPARE_SYSTEM_PROMPT',
     'RALPH_IMAGE',
     'SERVICE',
+    'AgentBackend',
+    'AgentEvent',
+    'AgentResult',
     'FileLock',
     'FileLockTimeout',
     'FlatStory',
@@ -38,10 +44,12 @@ __all__ = [
     'build_image',
     'compose',
     'compose_bare',
+    'display_agent_event',
     'display_event',
     'docker_sock_gid',
     'find_next_story',
     'geodb_volume',
+    'get_backend',
     'image_exists',
     'load_prd',
     'load_prd_model',

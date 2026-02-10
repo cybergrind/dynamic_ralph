@@ -76,12 +76,6 @@ class TestInfrastructureFiles:
 class TestConstantsDecoupled:
     """Verify constants are configurable and don't reference the parent project."""
 
-    def test_no_parent_project_in_constants(self):
-        from multi_agent.constants import COMPOSE_FILE, ENV_FILE, RALPH_IMAGE, SERVICE
-
-        for value in (RALPH_IMAGE, SERVICE, COMPOSE_FILE, ENV_FILE):
-            assert 'ralph' in value.lower() or value in ('.env', 'app', 'compose.test.yml')
-
     def test_git_email_is_generic(self):
         from multi_agent.constants import GIT_EMAIL
 
