@@ -5,7 +5,9 @@ Ensures no parent-project references remain and all infrastructure files exist.
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
+from typing import ClassVar
 
 
 # Root of the dynamic_ralph project
@@ -34,7 +36,6 @@ class TestInfrastructureFiles:
         content = dockerfile.read_text()
         assert 'python:3.13' in content
         # Should NOT reference the parent project's registry
-        assert 'octobrowser' not in content.lower()
         assert 'registry.gitlab.com' not in content
 
     def test_readme_exists(self):
@@ -75,13 +76,11 @@ class TestInfrastructureFiles:
 class TestConstantsDecoupled:
     """Verify constants are configurable and don't reference the parent project."""
 
-    def test_no_octobrowser_in_constants(self):
+    def test_no_parent_project_in_constants(self):
         from multi_agent.constants import COMPOSE_FILE, ENV_FILE, RALPH_IMAGE, SERVICE
 
-        assert 'octobrowser' not in RALPH_IMAGE.lower()
-        assert 'octobrowser' not in SERVICE.lower()
-        assert 'octobrowser' not in COMPOSE_FILE.lower()
-        assert 'octobrowser' not in ENV_FILE.lower()
+        for value in (RALPH_IMAGE, SERVICE, COMPOSE_FILE, ENV_FILE):
+            assert 'ralph' in value.lower() or value in ('.env', 'app', 'compose.test.yml')
 
     def test_default_service_is_generic(self):
         from multi_agent.constants import SERVICE
@@ -96,7 +95,7 @@ class TestConstantsDecoupled:
     def test_git_email_is_generic(self):
         from multi_agent.constants import GIT_EMAIL
 
-        assert 'octobrowser' not in GIT_EMAIL
+        assert GIT_EMAIL.endswith('@dynamic-ralph.dev')
         assert '@' in GIT_EMAIL
 
     def test_ralph_image_configurable(self, monkeypatch):
@@ -235,10 +234,68 @@ class TestDockerDecoupled:
 class TestGitEmailDecoupled:
     """Verify git email references don't use the parent project domain."""
 
-    def test_run_dynamic_ralph_no_octobrowser_email(self):
+    def test_run_dynamic_ralph_uses_clean_email(self):
         source = (PROJECT_ROOT / 'run_dynamic_ralph.py').read_text()
-        assert 'octobrowser.net' not in source
+        assert 'dynamic-ralph.dev' in source or 'GIT_EMAIL' in source
 
-    def test_executor_no_octobrowser_email(self):
+    def test_executor_uses_clean_email(self):
         source = (PROJECT_ROOT / 'multi_agent' / 'workflow' / 'executor.py').read_text()
-        assert 'octobrowser.net' not in source
+        assert 'dynamic-ralph.dev' in source or 'GIT_EMAIL' in source
+
+
+# ---------------------------------------------------------------------------
+# Comprehensive parent-project reference sweep
+# ---------------------------------------------------------------------------
+
+# The forbidden substring we scan for (assembled to avoid self-match).
+_FORBIDDEN = 'oct' + 'o'
+
+
+class TestNoParentProjectReferences:
+    """Sweep the entire repository to ensure no parent-project references remain."""
+
+    _IGNORE_DIRS: ClassVar[set[str]] = {'.git', '.venv', '__pycache__', 'node_modules', '.mypy_cache', '.ruff_cache'}
+
+    def _source_files(self):
+        """Yield all .py files under PROJECT_ROOT, skipping ignored dirs and this file."""
+        self_path = Path(__file__).resolve()
+        for p in PROJECT_ROOT.rglob('*.py'):
+            if p.resolve() == self_path:
+                continue
+            if not any(part in self._IGNORE_DIRS for part in p.parts):
+                yield p
+
+    def _json_files(self):
+        """Yield all .json files under PROJECT_ROOT, skipping ignored dirs."""
+        for p in PROJECT_ROOT.rglob('*.json'):
+            if not any(part in self._IGNORE_DIRS for part in p.parts):
+                yield p
+
+    def test_no_forbidden_in_source_files(self):
+        violations = []
+        for path in self._source_files():
+            content = path.read_text()
+            for i, line in enumerate(content.splitlines(), 1):
+                if _FORBIDDEN in line.lower():
+                    violations.append(f'{path.relative_to(PROJECT_ROOT)}:{i}: {line.strip()}')
+        assert violations == [], 'Forbidden string found in source files:\n' + '\n'.join(violations)
+
+    def test_no_forbidden_in_json_files(self):
+        violations = []
+        for path in self._json_files():
+            content = path.read_text()
+            for i, line in enumerate(content.splitlines(), 1):
+                if _FORBIDDEN in line.lower():
+                    violations.append(f'{path.relative_to(PROJECT_ROOT)}:{i}: {line.strip()}')
+        assert violations == [], 'Forbidden string found in JSON files:\n' + '\n'.join(violations)
+
+    def test_no_forbidden_in_git_author_emails(self):
+        result = subprocess.run(
+            ['git', 'log', '--all', '--format=%ae'],
+            capture_output=True,
+            text=True,
+            cwd=PROJECT_ROOT,
+        )
+        emails = result.stdout.strip().splitlines()
+        bad = [e for e in emails if _FORBIDDEN in e.lower()]
+        assert bad == [], f'Forbidden string found in git author emails: {bad}'

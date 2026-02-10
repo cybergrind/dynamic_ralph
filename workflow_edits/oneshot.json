@@ -1,32 +1,25 @@
 [
   {
-    "operation": "skip",
-    "target_step_id": "step-004",
-    "reason": "No test architecture needed — existing tests should continue to pass, no new test patterns required"
-  },
-  {
     "operation": "split",
-    "target_step_id": "step-005",
+    "target_step_id": "step-002",
     "new_steps": [
       {
         "type": "coding",
-        "description": "Phase 1 - Infrastructure: Fix pyproject.toml (name, add pydantic dep, fix isort known-first-party, remove alembic exclude), expand .gitignore, create docker/Dockerfile (standalone, python:3.13-slim base), create README.md, create CLAUDE.md"
+        "description": "Phase 1 — Remove parent project references from tests/test_migration.py: Rename test methods and rewrite assertion string literals to use generic terms or positive assertions. Replace all 11 occurrences."
       },
       {
         "type": "coding",
-        "description": "Phase 2 - Decouple from parent project: Make constants.py configurable via env vars with generic defaults, replace BASE_AGENT_INSTRUCTIONS in prompts.py with generic guidance (target project reads its own CLAUDE.md), fix Dockerfile path in docker.py to use docker/Dockerfile, change git emails from octobrowser.net to generic default in run_dynamic_ralph.py and executor.py, make PREPARE_SYSTEM_PROMPT generic"
+        "description": "Phase 2 — Remove parent project references from prd.json: Replace all parent_server/ paths with app_server/ in task descriptions for US-003, US-004, US-005 (3 occurrences on lines 38, 55, 72)."
+      },
+      {
+        "type": "coding",
+        "description": "Phase 3 — Rewrite git history: Use git filter-branch to change author/committer email to claude-agent@dynamic-ralph.dev on all 5 commits. Then verify with git log."
+      },
+      {
+        "type": "coding",
+        "description": "Phase 4 — Verify: Run uv run pytest and uv run pre-commit run -a to confirm all tests pass and lint is clean. Run a recursive grep to confirm zero remaining occurrences of parent project references."
       }
     ],
-    "reason": "Split implementation into infrastructure creation + parent-project decoupling for cleaner scope"
-  },
-  {
-    "operation": "skip",
-    "target_step_id": "step-008",
-    "reason": "Review integrated into final_review for this migration task"
-  },
-  {
-    "operation": "skip",
-    "target_step_id": "step-009",
-    "reason": "No test pruning needed — not adding new tests"
+    "reason": "Split into 4 phases: test file cleanup, prd cleanup, git rewrite, verification"
   }
 ]
