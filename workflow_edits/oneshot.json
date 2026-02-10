@@ -1,0 +1,42 @@
+[
+  {
+    "operation": "skip",
+    "target_step_id": "step-003",
+    "reason": "File-move task, no architecture design needed"
+  },
+  {
+    "operation": "skip",
+    "target_step_id": "step-004",
+    "reason": "File-move task, no test architecture needed"
+  },
+  {
+    "operation": "skip",
+    "target_step_id": "step-007",
+    "reason": "No tests to run — this is a file-move task"
+  },
+  {
+    "operation": "skip",
+    "target_step_id": "step-009",
+    "reason": "No tests written — nothing to prune"
+  },
+  {
+    "operation": "edit_description",
+    "target_step_id": "step-005",
+    "new_description": "Move all dynamic ralph files into the dynamic_ralph/ repo directory. Copy files, remove originals, update pyproject.toml. See scratch file for detailed plan."
+  },
+  {
+    "operation": "edit_description",
+    "target_step_id": "step-006",
+    "new_description": "Run uv run pre-commit run -a to verify formatting after file removals."
+  },
+  {
+    "operation": "edit_description",
+    "target_step_id": "step-008",
+    "new_description": "Verify dynamic_ralph/ directory has all files, remaining multi_agent/ imports still work for non-ralph scripts."
+  },
+  {
+    "operation": "edit_description",
+    "target_step_id": "step-010",
+    "new_description": "Final check: list moved files, confirm nothing in octo_server/ was affected, remaining multi_agent/ base files are untouched."
+  }
+]
