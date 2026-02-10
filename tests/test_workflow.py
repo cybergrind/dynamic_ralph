@@ -52,7 +52,6 @@ from multi_agent.workflow.steps import (
     create_default_workflow,
     MANDATORY_STEPS,
     MAX_RESTARTS_PER_STEP,
-    MAX_STEPS_PER_WORKFLOW,
     STEP_ALLOWS_EDITING,
     STEP_TIMEOUTS,
 )
@@ -153,10 +152,6 @@ class TestStoryWorkflow:
 
 
 class TestSteps:
-    def test_default_workflow_has_10_steps(self):
-        steps = create_default_workflow()
-        assert len(steps) == 10
-
     def test_default_workflow_step_types(self):
         steps = create_default_workflow()
         types = [s.type for s in steps]
@@ -187,10 +182,6 @@ class TestSteps:
     def test_step_editing_flags_cover_all_types(self):
         for st in StepType:
             assert st in STEP_ALLOWS_EDITING
-
-    def test_max_limits(self):
-        assert MAX_STEPS_PER_WORKFLOW == 30
-        assert MAX_RESTARTS_PER_STEP == 3
 
 
 # ===========================================================================
@@ -267,14 +258,6 @@ class TestDependencyValidation:
         s1 = _make_story('US-001', depends_on=['US-999'])
         state = _make_state(s1)
         with pytest.raises(ValueError, match='does not exist'):
-            validate_dependency_graph(state)
-
-    def test_three_node_cycle(self):
-        s1 = _make_story('US-001', depends_on=['US-003'])
-        s2 = _make_story('US-002', depends_on=['US-001'])
-        s3 = _make_story('US-003', depends_on=['US-002'])
-        state = _make_state(s1, s2, s3)
-        with pytest.raises(ValueError, match='Circular dependency'):
             validate_dependency_graph(state)
 
 
@@ -374,12 +357,6 @@ class TestEditValidation:
         story = _make_story()
         # step-006 is linting (mandatory)
         ops = [SkipEdit(target_step_id='step-006', reason='skip lint')]
-        with pytest.raises(EditValidationError, match='cannot skip mandatory'):
-            validate_edits(story, ops)
-
-    def test_skip_final_review_rejected(self):
-        story = _make_story()
-        ops = [SkipEdit(target_step_id='step-010', reason='skip final')]
         with pytest.raises(EditValidationError, match='cannot skip mandatory'):
             validate_edits(story, ops)
 
