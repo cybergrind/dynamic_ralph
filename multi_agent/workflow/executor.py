@@ -152,7 +152,7 @@ def _launch_agent(
 
     When already inside Docker (``/.dockerenv`` exists), runs Claude Code
     directly.  Otherwise wraps the invocation in a ``docker run`` command
-    using the same pattern as ``bin/run_agent.py``.
+    using the same pattern as ``bin/run_dynamic_ralph.py``.
     """
     # -- build the claude command ------------------------------------------------
     claude_cmd: list[str] = [
