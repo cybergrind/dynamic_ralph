@@ -1,25 +1,17 @@
 [
   {
-    "operation": "split",
-    "target_step_id": "step-002",
-    "new_steps": [
-      {
-        "type": "coding",
-        "description": "Phase 1 — Remove parent project references from tests/test_migration.py: Rename test methods and rewrite assertion string literals to use generic terms or positive assertions. Replace all 11 occurrences."
-      },
-      {
-        "type": "coding",
-        "description": "Phase 2 — Remove parent project references from prd.json: Replace all parent_server/ paths with app_server/ in task descriptions for US-003, US-004, US-005 (3 occurrences on lines 38, 55, 72)."
-      },
-      {
-        "type": "coding",
-        "description": "Phase 3 — Rewrite git history: Use git filter-branch to change author/committer email to claude-agent@dynamic-ralph.dev on all 5 commits. Then verify with git log."
-      },
-      {
-        "type": "coding",
-        "description": "Phase 4 — Verify: Run uv run pytest and uv run pre-commit run -a to confirm all tests pass and lint is clean. Run a recursive grep to confirm zero remaining occurrences of parent project references."
-      }
-    ],
-    "reason": "Split into 4 phases: test file cleanup, prd cleanup, git rewrite, verification"
+    "operation": "skip",
+    "target_step_id": "step-003",
+    "reason": "Documentation-only story — no code architecture to design"
+  },
+  {
+    "operation": "skip",
+    "target_step_id": "step-004",
+    "reason": "Documentation-only story — no tests to write or design"
+  },
+  {
+    "operation": "skip",
+    "target_step_id": "step-009",
+    "reason": "Documentation-only story — no tests added, nothing to prune"
   }
 ]

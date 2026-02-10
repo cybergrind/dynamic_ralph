@@ -27,7 +27,7 @@ RUN install -m 0755 -d /etc/apt/keyrings \
     && rm -rf /var/lib/apt/lists/*
 
 # uv package manager
-COPY --from=ghcr.io/astral-sh/uv:0.6.16 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.10.2 /uv /usr/local/bin/uv
 
 # Pre-install project Python deps so `uv run` is instant at runtime
 ENV UV_PROJECT_ENVIRONMENT=/tmp/venv

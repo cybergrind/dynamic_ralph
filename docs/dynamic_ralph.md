@@ -2,7 +2,7 @@
 
 ## Introduction & Motivation
 
-The current Ralph system (`docs/ralph.md`) gives each agent a single large prompt covering everything: planning, coding, testing, and review. The primary problem is **unstable quality** — when too much fits into one step, agents lose track of important details. For example, an agent may forget that Python must be run via `uv run` instead of `python3`, or ignore a specific acceptance criterion buried in context. The more an agent has to juggle, the more likely it is to drop something.
+The current Ralph system (see `docs/ralph.md`) gives each agent a single large prompt covering everything: planning, coding, testing, and review. The primary problem is **unstable quality** — when too much fits into one step, agents lose track of important details. For example, an agent may forget that Python must be run via `uv run` instead of `python3`, or ignore a specific acceptance criterion buried in context. The more an agent has to juggle, the more likely it is to drop something.
 
 Dynamic Ralph addresses this by decomposing each story into **steps** — small, focused units of work with defined inputs, outputs, and exit criteria.
 
@@ -244,7 +244,7 @@ Runs the test suite for the affected area. If tests fail, the agent categorizes 
 
 - **You receive:** Notes from `test_architecture`, current codebase
 - **You produce:** Test results with pass/fail per test, categorized failures if any
-- **Key instructions:** Run tests using `./bin/run_agent_tests.sh <test_path>`. If tests fail, categorize root causes and use workflow editing to add `coding -> linting -> initial_testing` fix cycle.
+- **Key instructions:** Run tests using `uv run pytest <test_path>`. If tests fail, categorize root causes and use workflow editing to add `coding -> linting -> initial_testing` fix cycle.
 - End your response with a SUMMARY section (3-5 lines).
 
 ---
@@ -307,7 +307,7 @@ Agents tend to generate more tests than necessary. This step reviews the test su
 
 - **You receive:** All prior step notes, full story context, scratch files
 - **You produce:** Final verification that everything passes, clean final commit
-- **Key instructions:** Run `uv run pre-commit run -a` and `./bin/run_agent_tests.sh <test_path>`. Verify all acceptance criteria are met. If issues found, add fix steps before this step via workflow editing. Create a clean final commit.
+- **Key instructions:** Run `uv run pre-commit run -a` and `uv run pytest <test_path>`. Verify all acceptance criteria are met. If issues found, add fix steps before this step via workflow editing. Create a clean final commit.
 - End your response with a SUMMARY section (3-5 lines).
 
 ## Step State Machine
@@ -367,7 +367,7 @@ The orchestrator re-evaluates `blocked` stories on every loop iteration. If a pr
 
 ## Workflow State File Schema
 
-The shared state lives in `workflow_state.json` at the project root. All access is protected by `FileLock` (same mechanism used by `run_agent_tests.py`).
+The shared state lives in `workflow_state.json` at the project root. All access is protected by `FileLock`.
 
 ### Top-Level Schema
 
@@ -654,7 +654,7 @@ The orchestrator only reads `workflow_edits/<assigned_story_id>.json` for each a
 
 ### Story Assignment
 
-The orchestrator (`run_ralph.py`) is responsible for assigning stories to agents. Agents do not choose stories themselves — they receive a story ID when launched.
+The orchestrator (`bin/run_dynamic_ralph.py`) is responsible for assigning stories to agents. Agents do not choose stories themselves — they receive a story ID when launched.
 
 ```python
 # Orchestrator picks the next story and assigns it
@@ -730,7 +730,7 @@ This strategy ensures that:
 
 ### Infrastructure Isolation
 
-Each agent already gets a unique `COMPOSE_PROJECT_NAME=ralph_agent_<id>` (set by `run_agent.py`). This means each agent's test infrastructure (MySQL, Redis, Kafka, TimescaleDB) runs in a separate Docker Compose project with no port or volume conflicts.
+Each agent already gets a unique `COMPOSE_PROJECT_NAME=ralph_agent_<id>` (set by the orchestrator). This means each agent's test infrastructure (MySQL, Redis, Kafka, TimescaleDB) runs in a separate Docker Compose project with no port or volume conflicts.
 
 ### Inter-Story Dependencies
 
@@ -765,10 +765,10 @@ This ensures the system recovers gracefully from power loss, OOM kills, or manua
 
 ### Orchestrator Loop
 
-`run_ralph.py` runs a loop: find assignable stories, spawn agents (up to N in parallel), wait, repeat.
+`bin/run_dynamic_ralph.py` runs a loop: find assignable stories, spawn agents (up to N in parallel), wait, repeat.
 
 ```
-run_ralph.py --agents 3 --prd prd.json
+bin/run_dynamic_ralph.py --agents 3 --prd prd.json
 │
 ├── Validates dependency graph (topological sort, detects cycles)
 ├── Initializes workflow_state.json from prd.json (if not exists)
@@ -778,9 +778,9 @@ run_ralph.py --agents 3 --prd prd.json
     ├── Re-evaluate blocked stories (unblock if dependencies met)
     ├── Find assignable stories (unclaimed, dependencies met)
     ├── Assign up to N stories to available agent slots
-    │   ├── Agent 1 ──→ run_agent.py --agent-id 1 --story US-001
-    │   ├── Agent 2 ──→ run_agent.py --agent-id 2 --story US-003
-    │   └── Agent 3 ──→ run_agent.py --agent-id 3 --story US-004
+    │   ├── Agent 1 ──→ run_dynamic_ralph.py --agent-id 1 --story US-001
+    │   ├── Agent 2 ──→ run_dynamic_ralph.py --agent-id 2 --story US-003
+    │   └── Agent 3 ──→ run_dynamic_ralph.py --agent-id 3 --story US-004
     ├── Wait for any agent to finish a step
     ├── Process step result (edits, completion, failure)
     ├── If story complete: rebase and merge
@@ -802,13 +802,13 @@ This enables filtering by agent, story, or step when debugging parallel executio
 An agent can also be launched without a PRD or story — just a free-form request:
 
 ```bash
-uv run bin/run_agent.py "Fix the N+1 query in profiles list endpoint"
+uv run python bin/run_dynamic_ralph.py "Fix the N+1 query in profiles list endpoint"
 ```
 
 In this mode, the agent creates **ephemeral state** — a temporary `workflow_state.json`, `scratch.md`, and `scratch_<story_id>.md` in a temp directory. The same step machinery runs: the full workflow (context_gathering → planning → ... → final_review), step editing, guardrails, and history tracking all work identically. The request text is used as the story description. When the agent finishes, the ephemeral state is discarded.
 
 This means:
-- **The agent code is the same** in one-shot and PRD modes — the orchestrator constructs the workflow state and passes the path and story ID to `run_agent.py` in both cases
+- **The agent code is the same** in one-shot and PRD modes — the orchestrator constructs the workflow state and passes the path and story ID in both cases
 - **Step editing and restart work** — the ephemeral state file backs them
 - **One-shot is the natural starting point for implementation** — get a single agent's workflow working end-to-end, then layer on the orchestrator and parallel execution
 
@@ -836,7 +836,7 @@ The `review` and `final_review` steps are self-review — the same agent (model)
 
 The system should be built bottom-up:
 
-1. **Single agent, one-shot mode** — implement the step execution loop, step editing, restart, scratch files, per-step timeouts. Test with `run_agent.py "some task"`. This is the foundation — get it working and polished before moving on.
+1. **Single agent, one-shot mode** — implement the step execution loop, step editing, restart, scratch files, per-step timeouts. Test with `bin/run_dynamic_ralph.py "some task"`. This is the foundation — get it working and polished before moving on.
 
 2. **PRD mode, single agent:**
    - **2a. Persistent state + step orchestrator** — add `workflow_state.json` persistence, step-level orchestration for a single story. Test full workflow lifecycle.

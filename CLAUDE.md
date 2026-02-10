@@ -8,7 +8,8 @@ Always run commands with `uv run`.
 
 ```
 dynamic_ralph/
-├── run_dynamic_ralph.py     # Main orchestrator (entry point)
+├── bin/
+│   └── run_dynamic_ralph.py # Main orchestrator (entry point)
 ├── multi_agent/             # Core package
 │   ├── __init__.py          # Public re-exports
 │   ├── constants.py         # Configurable constants (env vars)
@@ -29,6 +30,9 @@ dynamic_ralph/
 │       ├── scratch.py       # Scratch file management
 │       ├── state.py         # State persistence
 │       └── steps.py         # Step type definitions
+├── docs/
+│   ├── dynamic_ralph.md     # Dynamic Ralph design spec
+│   └── ralph.md             # Ralph pattern overview
 ├── tests/
 │   ├── test_workflow.py     # Workflow module tests
 │   └── test_migration.py   # Migration validation tests
