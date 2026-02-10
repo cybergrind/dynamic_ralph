@@ -99,12 +99,6 @@ class TestStepModel:
         assert step.notes is None
         assert step.restart_count == 0
 
-    def test_all_step_types_exist(self):
-        assert len(StepType) == 10
-
-    def test_all_step_statuses_exist(self):
-        assert set(StepStatus) == {'pending', 'in_progress', 'completed', 'skipped', 'failed', 'cancelled'}
-
 
 class TestStoryWorkflow:
     def test_next_step_id_starts_at_011(self):

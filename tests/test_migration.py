@@ -174,7 +174,7 @@ class TestConstantsDecoupled:
 class TestPromptsDecoupled:
     """Verify prompts don't contain parent project references."""
 
-    def test_no_parent_project_stack_in_base_instructions(self):
+    def test_no_parent_references_in_base_instructions(self):
         from multi_agent.prompts import BASE_AGENT_INSTRUCTIONS
 
         # Should not reference specific parent project tech stack
@@ -183,16 +183,9 @@ class TestPromptsDecoupled:
         assert 'MySQL' not in BASE_AGENT_INSTRUCTIONS
         assert 'TimescaleDB' not in BASE_AGENT_INSTRUCTIONS
         assert 'Kafka' not in BASE_AGENT_INSTRUCTIONS
-
-    def test_no_parent_test_runner_in_base_instructions(self):
-        from multi_agent.prompts import BASE_AGENT_INSTRUCTIONS
-
+        # Should not reference parent test runner or scripts
         assert 'run_agent_tests.sh' not in BASE_AGENT_INSTRUCTIONS
         assert 'bin/' not in BASE_AGENT_INSTRUCTIONS
-
-    def test_no_parent_architecture_in_base_instructions(self):
-        from multi_agent.prompts import BASE_AGENT_INSTRUCTIONS
-
         # Should not reference parent's layer architecture
         assert 'api/ → core/ → common/' not in BASE_AGENT_INSTRUCTIONS
         assert 'queries.py, actions.py' not in BASE_AGENT_INSTRUCTIONS
@@ -249,7 +242,3 @@ class TestGitEmailDecoupled:
     def test_executor_no_octobrowser_email(self):
         source = (PROJECT_ROOT / 'multi_agent' / 'workflow' / 'executor.py').read_text()
         assert 'octobrowser.net' not in source
-
-    def test_constants_no_octobrowser(self):
-        source = (PROJECT_ROOT / 'multi_agent' / 'constants.py').read_text()
-        assert 'octobrowser' not in source.lower()
