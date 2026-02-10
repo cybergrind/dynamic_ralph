@@ -344,7 +344,7 @@ def execute_step(
     # Process any workflow edit requests
     edits_applied = False
     try:
-        edits = parse_edit_file(story.story_id, shared_dir)
+        edits = parse_edit_file(story.story_id)
         if edits is not None:
             # Reload state for edit application
             with locked_state(state_path) as state:
@@ -352,7 +352,7 @@ def execute_step(
                 try:
                     validate_edits(sw, edits)
                     apply_edits(sw, edits)
-                    remove_edit_file(story.story_id, shared_dir)
+                    remove_edit_file(story.story_id)
                     edits_applied = True
                     _add_history(sw, 'workflow_edit', agent_id, step_id, edits_count=len(edits))
                     logger.info(
@@ -366,10 +366,10 @@ def execute_step(
                         story.story_id,
                         exc,
                     )
-                    discard_edit_file(story.story_id, shared_dir)
+                    discard_edit_file(story.story_id)
     except Exception:
         logger.exception('Error processing workflow edits for story %s', story.story_id)
-        discard_edit_file(story.story_id, shared_dir)
+        discard_edit_file(story.story_id)
 
     # Extract summary from agent output for inter-step context
     last_text = result_info.get('last_assistant_text', '')
