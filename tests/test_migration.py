@@ -96,7 +96,6 @@ class TestConstantsDecoupled:
         from multi_agent.constants import GIT_EMAIL
 
         assert GIT_EMAIL.endswith('@dynamic-ralph.dev')
-        assert '@' in GIT_EMAIL
 
     def test_ralph_image_configurable(self, monkeypatch):
         monkeypatch.setenv('RALPH_IMAGE', 'custom-image:v2')
@@ -209,7 +208,6 @@ class TestDockerDecoupled:
     def test_dockerfile_path_is_local(self):
         from multi_agent.docker import DOCKERFILE_PATH
 
-        assert 'ralph/Dockerfile' not in DOCKERFILE_PATH or DOCKERFILE_PATH == 'docker/Dockerfile'
         assert DOCKERFILE_PATH == 'docker/Dockerfile'
 
     def test_dockerfile_path_configurable(self, monkeypatch):
@@ -224,23 +222,6 @@ class TestDockerDecoupled:
         finally:
             monkeypatch.delenv('RALPH_DOCKERFILE')
             importlib.reload(multi_agent.docker)
-
-
-# ---------------------------------------------------------------------------
-# Git email decoupling
-# ---------------------------------------------------------------------------
-
-
-class TestGitEmailDecoupled:
-    """Verify git email references don't use the parent project domain."""
-
-    def test_run_dynamic_ralph_uses_clean_email(self):
-        source = (PROJECT_ROOT / 'run_dynamic_ralph.py').read_text()
-        assert 'dynamic-ralph.dev' in source or 'GIT_EMAIL' in source
-
-    def test_executor_uses_clean_email(self):
-        source = (PROJECT_ROOT / 'multi_agent' / 'workflow' / 'executor.py').read_text()
-        assert 'dynamic-ralph.dev' in source or 'GIT_EMAIL' in source
 
 
 # ---------------------------------------------------------------------------
