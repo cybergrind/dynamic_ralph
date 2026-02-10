@@ -1,9 +1,9 @@
 """Dynamic Ralph: structured phases and step-based workflow execution."""
 
 from multi_agent.workflow.editing import (
+    EditValidationError,
     apply_edits,
     discard_edit_file,
-    EditValidationError,
     parse_edit_file,
     remove_edit_file,
     validate_edits,
@@ -26,7 +26,7 @@ from multi_agent.workflow.models import (
     StoryWorkflow,
     WorkflowState,
 )
-from multi_agent.workflow.prompts import compose_step_prompt, STEP_INSTRUCTIONS
+from multi_agent.workflow.prompts import STEP_INSTRUCTIONS, compose_step_prompt
 from multi_agent.workflow.scratch import (
     append_global_scratch,
     append_story_scratch,
@@ -45,31 +45,31 @@ from multi_agent.workflow.state import (
     validate_dependency_graph,
 )
 from multi_agent.workflow.steps import (
-    create_default_workflow,
     MANDATORY_STEPS,
     MAX_RESTARTS_PER_STEP,
     MAX_STEPS_PER_WORKFLOW,
     STEP_ALLOWS_EDITING,
     STEP_TIMEOUTS,
+    create_default_workflow,
 )
 
 
 __all__ = [
+    'MANDATORY_STEPS',
+    'MAX_RESTARTS_PER_STEP',
+    'MAX_STEPS_PER_WORKFLOW',
+    'STEP_ALLOWS_EDITING',
+    'STEP_INSTRUCTIONS',
+    'STEP_TIMEOUTS',
     'AddAfterEdit',
     'AgentResult',
     'EditDescriptionEdit',
     'EditOperation',
     'EditValidationError',
     'HistoryEntry',
-    'MANDATORY_STEPS',
-    'MAX_RESTARTS_PER_STEP',
-    'MAX_STEPS_PER_WORKFLOW',
     'NewStepSpec',
     'ReorderEdit',
     'RestartEdit',
-    'STEP_ALLOWS_EDITING',
-    'STEP_INSTRUCTIONS',
-    'STEP_TIMEOUTS',
     'SkipEdit',
     'SplitEdit',
     'Step',

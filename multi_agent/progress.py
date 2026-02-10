@@ -1,6 +1,6 @@
 """Progress logging for ralph loop."""
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
 
 def append_progress(message: str) -> None:

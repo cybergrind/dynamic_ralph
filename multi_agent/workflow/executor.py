@@ -13,17 +13,17 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 
-from multi_agent.constants import RALPH_IMAGE
+from multi_agent.constants import GIT_EMAIL, RALPH_IMAGE
 from multi_agent.docker import build_image, docker_sock_gid, image_exists
 from multi_agent.prompts import BASE_AGENT_INSTRUCTIONS
 from multi_agent.stream import display_event
 from multi_agent.workflow.editing import (
+    EditValidationError,
     apply_edits,
     discard_edit_file,
-    EditValidationError,
     parse_edit_file,
     remove_edit_file,
     validate_edits,
@@ -201,11 +201,11 @@ def _launch_agent(
             '-e',
             'GIT_AUTHOR_NAME=Claude Agent',
             '-e',
-            'GIT_AUTHOR_EMAIL=claude-agent@octobrowser.net',
+            f'GIT_AUTHOR_EMAIL={GIT_EMAIL}',
             '-e',
             'GIT_COMMITTER_NAME=Claude Agent',
             '-e',
-            'GIT_COMMITTER_EMAIL=claude-agent@octobrowser.net',
+            f'GIT_COMMITTER_EMAIL={GIT_EMAIL}',
             '-v',
             '/var/run/docker.sock:/var/run/docker.sock',
             '-v',
@@ -234,7 +234,7 @@ def _launch_agent(
         bufsize=1,
     )
 
-    log_file = open(log_path, 'w')  # noqa: SIM115
+    log_file = open(log_path, 'w')
     last_assistant_text: str = ''
     start_time = time.monotonic()
 

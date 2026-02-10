@@ -26,7 +26,7 @@ existing patterns, related tests, current behavior.
 ### Exit Criteria
 All areas relevant to the story are identified and documented.
 
-End your response with a SUMMARY section (3–5 lines) capturing key findings.""",
+End your response with a SUMMARY section (3-5 lines) capturing key findings.""",
     StepType.planning: """\
 ## Step: Planning
 
@@ -46,7 +46,7 @@ with operations: add_after, split, skip, reorder, edit_description.
 ### Exit Criteria
 Plan covers all acceptance criteria; files to modify are identified.
 
-End your response with a SUMMARY section (3–5 lines).""",
+End your response with a SUMMARY section (3-5 lines).""",
     StepType.architecture: """\
 ## Step: Architecture
 
@@ -66,7 +66,7 @@ You may modify remaining steps if needed.
 ### Exit Criteria
 All structural decisions documented; import dependencies verified.
 
-End your response with a SUMMARY section (3–5 lines).""",
+End your response with a SUMMARY section (3-5 lines).""",
     StepType.test_architecture: """\
 ## Step: Test Architecture
 
@@ -85,7 +85,7 @@ You may adjust strategy if architecture needs revision, or split testing phases.
 ### Exit Criteria
 Test plan covers all acceptance criteria; fixture requirements identified.
 
-End your response with a SUMMARY section (3–5 lines).""",
+End your response with a SUMMARY section (3-5 lines).""",
     StepType.coding: """\
 ## Step: Coding
 
@@ -104,7 +104,7 @@ You may add additional coding rounds or other steps.
 ### Exit Criteria
 All planned changes implemented; code compiles/imports without error.
 
-End your response with a SUMMARY section (3–5 lines).""",
+End your response with a SUMMARY section (3-5 lines).""",
     StepType.linting: """\
 ## Step: Linting
 
@@ -120,7 +120,7 @@ End your response with a SUMMARY section (3–5 lines).""",
 ### Exit Criteria
 `uv run pre-commit run -a` passes with zero issues.
 
-End your response with a SUMMARY section (3–5 lines).""",
+End your response with a SUMMARY section (3-5 lines).""",
     StepType.initial_testing: """\
 ## Step: Initial Testing
 
@@ -138,7 +138,7 @@ You may add coding + linting + testing cycles to fix failures.
 ### Exit Criteria
 All relevant tests executed; failures documented with root causes.
 
-End your response with a SUMMARY section (3–5 lines).""",
+End your response with a SUMMARY section (3-5 lines).""",
     StepType.review: """\
 ## Step: Review
 
@@ -157,7 +157,7 @@ You may add steps for additional fixes or testing rounds.
 ### Exit Criteria
 All acceptance criteria verified; no obvious issues remain.
 
-End your response with a SUMMARY section (3–5 lines).""",
+End your response with a SUMMARY section (3-5 lines).""",
     StepType.prune_tests: """\
 ## Step: Prune Tests
 
@@ -173,7 +173,7 @@ End your response with a SUMMARY section (3–5 lines).""",
 ### Exit Criteria
 No redundant tests remain; coverage of acceptance criteria preserved.
 
-End your response with a SUMMARY section (3–5 lines).""",
+End your response with a SUMMARY section (3-5 lines).""",
     StepType.final_review: """\
 ## Step: Final Review
 
@@ -194,7 +194,7 @@ You may add steps BEFORE this step if issues are found. This step cannot be remo
 ### Exit Criteria
 All acceptance criteria pass; tests pass; lint passes; commit is clean.
 
-End your response with a SUMMARY section (3–5 lines).""",
+End your response with a SUMMARY section (3-5 lines).""",
 }
 
 

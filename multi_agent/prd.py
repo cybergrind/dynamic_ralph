@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from multi_agent.models import parse_prd, Prd
+from multi_agent.models import Prd, parse_prd
 
 
 def load_prd(path: Path) -> list[dict]:

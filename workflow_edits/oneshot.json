@@ -1,42 +1,32 @@
 [
   {
     "operation": "skip",
-    "target_step_id": "step-003",
-    "reason": "File-move task, no architecture design needed"
-  },
-  {
-    "operation": "skip",
     "target_step_id": "step-004",
-    "reason": "File-move task, no test architecture needed"
+    "reason": "No test architecture needed — existing tests should continue to pass, no new test patterns required"
+  },
+  {
+    "operation": "split",
+    "target_step_id": "step-005",
+    "new_steps": [
+      {
+        "type": "coding",
+        "description": "Phase 1 - Infrastructure: Fix pyproject.toml (name, add pydantic dep, fix isort known-first-party, remove alembic exclude), expand .gitignore, create docker/Dockerfile (standalone, python:3.13-slim base), create README.md, create CLAUDE.md"
+      },
+      {
+        "type": "coding",
+        "description": "Phase 2 - Decouple from parent project: Make constants.py configurable via env vars with generic defaults, replace BASE_AGENT_INSTRUCTIONS in prompts.py with generic guidance (target project reads its own CLAUDE.md), fix Dockerfile path in docker.py to use docker/Dockerfile, change git emails from octobrowser.net to generic default in run_dynamic_ralph.py and executor.py, make PREPARE_SYSTEM_PROMPT generic"
+      }
+    ],
+    "reason": "Split implementation into infrastructure creation + parent-project decoupling for cleaner scope"
   },
   {
     "operation": "skip",
-    "target_step_id": "step-007",
-    "reason": "No tests to run — this is a file-move task"
+    "target_step_id": "step-008",
+    "reason": "Review integrated into final_review for this migration task"
   },
   {
     "operation": "skip",
     "target_step_id": "step-009",
-    "reason": "No tests written — nothing to prune"
-  },
-  {
-    "operation": "edit_description",
-    "target_step_id": "step-005",
-    "new_description": "Move all dynamic ralph files into the dynamic_ralph/ repo directory. Copy files, remove originals, update pyproject.toml. See scratch file for detailed plan."
-  },
-  {
-    "operation": "edit_description",
-    "target_step_id": "step-006",
-    "new_description": "Run uv run pre-commit run -a to verify formatting after file removals."
-  },
-  {
-    "operation": "edit_description",
-    "target_step_id": "step-008",
-    "new_description": "Verify dynamic_ralph/ directory has all files, remaining multi_agent/ imports still work for non-ralph scripts."
-  },
-  {
-    "operation": "edit_description",
-    "target_step_id": "step-010",
-    "new_description": "Final check: list moved files, confirm nothing in octo_server/ was affected, remaining multi_agent/ base files are untouched."
+    "reason": "No test pruning needed — not adding new tests"
   }
 ]

@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import json
-import tempfile
-from pathlib import Path
 
 import pytest
 
 from multi_agent.workflow.editing import (
-    apply_edits,
     EditValidationError,
+    apply_edits,
     parse_edit_file,
     remove_edit_file,
     validate_edits,
@@ -30,7 +28,7 @@ from multi_agent.workflow.models import (
     StoryWorkflow,
     WorkflowState,
 )
-from multi_agent.workflow.prompts import compose_step_prompt, STEP_INSTRUCTIONS
+from multi_agent.workflow.prompts import STEP_INSTRUCTIONS, compose_step_prompt
 from multi_agent.workflow.scratch import (
     append_global_scratch,
     append_story_scratch,
@@ -49,11 +47,11 @@ from multi_agent.workflow.state import (
     validate_dependency_graph,
 )
 from multi_agent.workflow.steps import (
-    create_default_workflow,
     MANDATORY_STEPS,
     MAX_RESTARTS_PER_STEP,
     STEP_ALLOWS_EDITING,
     STEP_TIMEOUTS,
+    create_default_workflow,
 )
 
 
@@ -457,7 +455,7 @@ class TestEditValidation:
         story = _make_story()
         pending_ids = [s.id for s in story.steps if s.status == StepStatus.pending]
         # Swap first two pending steps, keep final_review last
-        new_order = [pending_ids[1], pending_ids[0]] + pending_ids[2:]
+        new_order = [pending_ids[1], pending_ids[0], *pending_ids[2:]]
         ops = [ReorderEdit(reason='test', new_order=new_order)]
         validate_edits(story, ops)
 
@@ -556,7 +554,7 @@ class TestEditApplication:
     def test_apply_reorder(self):
         story = _make_story()
         pending_ids = [s.id for s in story.steps if s.status == StepStatus.pending]
-        new_order = list(reversed(pending_ids[:-1])) + [pending_ids[-1]]
+        new_order = [*reversed(pending_ids[:-1]), pending_ids[-1]]
         ops = [ReorderEdit(reason='test', new_order=new_order)]
         validate_edits(story, ops)
         apply_edits(story, ops)
@@ -749,7 +747,6 @@ class TestFileLock:
 
     def test_timeout_raises(self, tmp_path):
         import multiprocessing
-        import time
 
         from multi_agent.filelock import FileLock, FileLockTimeout
 

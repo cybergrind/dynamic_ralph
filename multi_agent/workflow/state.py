@@ -6,7 +6,7 @@ import json
 import tempfile
 from collections import defaultdict, deque
 from contextlib import contextmanager
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -205,11 +205,11 @@ def _trace_cycle(cycle_members: list[str], state: WorkflowState) -> list[str]:
         if next_node in visited:
             # We found the cycle — trim path to start at the repeated node
             cycle_start = path.index(next_node)
-            return path[cycle_start:] + [next_node]
+            return [*path[cycle_start:], next_node]
 
         visited.add(next_node)
         path.append(next_node)
         current = next_node
 
     # Fallback: just return the members with the first repeated
-    return cycle_members + [cycle_members[0]]
+    return [*cycle_members, cycle_members[0]]

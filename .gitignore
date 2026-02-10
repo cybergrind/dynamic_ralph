@@ -1,1 +1,38 @@
+# Python
 *.pyc
+__pycache__/
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# uv
+.python-version
+
+# Dynamic Ralph runtime artifacts
+workflow_state.json
+scratch.md
+scratch_*.md
+logs/
+worktrees/
+progress.txt
+workflow_edits/
+
+# Docker
+docker-compose.override.yml

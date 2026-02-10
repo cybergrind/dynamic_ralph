@@ -16,22 +16,23 @@ import subprocess
 import sys
 import tempfile
 import time
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 
 from multi_agent import (
-    append_progress,
     BASE_AGENT_INSTRUCTIONS,
+    RALPH_IMAGE,
+    append_progress,
     build_image,
     display_event,
     docker_sock_gid,
     image_exists,
-    RALPH_IMAGE,
 )
+from multi_agent.constants import GIT_EMAIL
 from multi_agent.workflow.editing import (
+    EditValidationError,
     apply_edits,
     discard_edit_file,
-    EditValidationError,
     parse_edit_file,
     remove_edit_file,
     validate_edits,
@@ -57,7 +58,7 @@ from multi_agent.workflow.state import (
     locked_state,
     save_state,
 )
-from multi_agent.workflow.steps import create_default_workflow, STEP_TIMEOUTS
+from multi_agent.workflow.steps import STEP_TIMEOUTS, create_default_workflow
 
 
 logger = logging.getLogger(__name__)
@@ -188,11 +189,11 @@ def _run_agent_docker(
         '-e',
         'GIT_AUTHOR_NAME=Claude Agent',
         '-e',
-        'GIT_AUTHOR_EMAIL=claude-agent@octobrowser.net',
+        f'GIT_AUTHOR_EMAIL={GIT_EMAIL}',
         '-e',
         'GIT_COMMITTER_NAME=Claude Agent',
         '-e',
-        'GIT_COMMITTER_EMAIL=claude-agent@octobrowser.net',
+        f'GIT_COMMITTER_EMAIL={GIT_EMAIL}',
     ]
 
     if shared_dir is not None:

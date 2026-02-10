@@ -1,17 +1,21 @@
 [project]
 name = 'dynamic-ralph'
 version = '0.1.0'
-description = 'implementation for the dynamic ralph approach'
+description = 'Dynamic Ralph: step-based multi-agent workflow orchestrator for Claude Code'
 authors = [{ name = 'github.com/cybergrind' }]
 license = { text = 'Apache-2.0' }
 requires-python = '>=3.13'
 dependencies = [
-  'ipython',
+  'pydantic>=2.0',
 ]
 
 # installed with: uv sync
 [dependency-groups]
-dev = ['ruff', 'pre-commit>=4.1.0', 'uv>=0.10.2']
+dev = ['ruff', 'pre-commit>=4.1.0', 'uv>=0.10.2', 'pytest>=8.0', 'pytest-asyncio>=0.24']
+
+[tool.pytest.ini_options]
+asyncio_mode = 'auto'
+testpaths = ['tests']
 
 [tool.ruff]
 line-length = 120
@@ -24,7 +28,7 @@ quote-style = 'single'
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
-known-first-party = ['snapshot_manager']
+known-first-party = ['multi_agent']
 lines-after-imports = 2
 
 [tool.ruff.lint]
@@ -48,7 +52,6 @@ select = [
   'Q',     # flake8-quotes
   'RUF',
 ]
-exclude = ['alembic/*']
 
 [tool.ruff.lint.flake8-quotes]
 docstring-quotes = 'double'
