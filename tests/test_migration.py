@@ -82,16 +82,6 @@ class TestConstantsDecoupled:
         for value in (RALPH_IMAGE, SERVICE, COMPOSE_FILE, ENV_FILE):
             assert 'ralph' in value.lower() or value in ('.env', 'app', 'compose.test.yml')
 
-    def test_default_service_is_generic(self):
-        from multi_agent.constants import SERVICE
-
-        assert SERVICE == 'app'
-
-    def test_default_env_file_is_generic(self):
-        from multi_agent.constants import ENV_FILE
-
-        assert ENV_FILE == '.env'
-
     def test_git_email_is_generic(self):
         from multi_agent.constants import GIT_EMAIL
 

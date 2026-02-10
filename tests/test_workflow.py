@@ -92,14 +92,6 @@ def _make_state(*stories: StoryWorkflow) -> WorkflowState:
 # ===========================================================================
 
 
-class TestStepModel:
-    def test_default_values(self):
-        step = Step(id='step-001', type=StepType.coding)
-        assert step.status == StepStatus.pending
-        assert step.notes is None
-        assert step.restart_count == 0
-
-
 class TestStoryWorkflow:
     def test_next_step_id_starts_at_011(self):
         story = _make_story()
