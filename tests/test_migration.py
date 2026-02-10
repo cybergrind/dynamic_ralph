@@ -5,10 +5,7 @@ Ensures no parent-project references remain and all infrastructure files exist.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-
-import pytest
 
 
 # Root of the dynamic_ralph project
