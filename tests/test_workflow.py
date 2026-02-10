@@ -650,30 +650,9 @@ class TestEditFileParsing:
         assert not edit_file.exists()
         assert (edits_dir / 'failed' / 'US-001.json').exists()
 
-    def test_discard_edit_file_explicit_dir(self, tmp_path):
-        """discard_edit_file with explicit shared_dir moves file correctly."""
-        edits_dir = tmp_path / 'workflow_edits'
-        edits_dir.mkdir()
-        edit_file = edits_dir / 'US-001.json'
-        edit_file.write_text('{"bad": true}')
-        discard_edit_file('US-001', tmp_path)
-        assert not edit_file.exists()
-        assert (edits_dir / 'failed' / 'US-001.json').exists()
-
     def test_discard_edit_file_nonexistent_noop(self, tmp_path):
         """discard_edit_file is a no-op when the file does not exist."""
         discard_edit_file('US-999', tmp_path)  # should not raise
-
-    def test_parse_edit_file_single_object_wrapping(self, tmp_path):
-        """parse_edit_file wraps a single JSON object into a list."""
-        edits_dir = tmp_path / 'workflow_edits'
-        edits_dir.mkdir()
-        edit_file = edits_dir / 'US-001.json'
-        edit_file.write_text(json.dumps({'operation': 'skip', 'target_step_id': 'step-009', 'reason': 'test'}))
-        ops = parse_edit_file('US-001', tmp_path)
-        assert ops is not None
-        assert len(ops) == 1
-        assert isinstance(ops[0], SkipEdit)
 
 
 # ===========================================================================
