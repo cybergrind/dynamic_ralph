@@ -65,6 +65,16 @@ logger = logging.getLogger(__name__)
 WORKTREE_DIR = Path('worktrees')
 
 
+def _git_main_branch() -> str:
+    """Return the current branch name (e.g. 'main' or 'master')."""
+    result = subprocess.run(
+        ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip() or 'main'
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -700,7 +710,7 @@ def _create_worktree(agent_id: int, story_id: str) -> Path:
     )
 
     subprocess.run(
-        ['git', 'worktree', 'add', str(worktree_path), '-b', branch_name, 'master'],
+        ['git', 'worktree', 'add', str(worktree_path), '-b', branch_name, _git_main_branch()],
         check=True,
         capture_output=True,
         text=True,
@@ -722,16 +732,17 @@ def _remove_worktree(agent_id: int) -> None:
 
 
 def _merge_worktree(agent_id: int, story_id: str) -> bool:
-    """Rebase worktree branch onto master and squash merge.
+    """Rebase worktree branch onto the main branch and squash merge.
 
     Returns True on success, False on merge failure.
     """
     branch_name = f'ralph/{story_id}'
     worktree_path = WORKTREE_DIR / f'agent-{agent_id}'
+    main_branch = _git_main_branch()
 
-    # Rebase onto master
+    # Rebase onto main branch
     result = subprocess.run(
-        ['git', '-C', str(worktree_path), 'rebase', 'master'],
+        ['git', '-C', str(worktree_path), 'rebase', main_branch],
         capture_output=True,
         text=True,
     )
@@ -747,7 +758,7 @@ def _merge_worktree(agent_id: int, story_id: str) -> bool:
         )
         return False
 
-    # Squash merge into master
+    # Squash merge into main branch
     result = subprocess.run(
         ['git', 'merge', '--squash', branch_name],
         capture_output=True,
@@ -772,7 +783,7 @@ def _merge_worktree(agent_id: int, story_id: str) -> bool:
         logger.error('Commit failed for story %s:\n%s', story_id, result.stderr)
         return False
 
-    logger.info('Merged story %s into master', story_id)
+    logger.info('Merged story %s into %s', story_id, main_branch)
     return True
 
 
@@ -789,7 +800,7 @@ def run_parallel(
     """Run stories from a PRD file in parallel with multiple agents.
 
     Each agent gets its own git worktree. Stories are assigned and executed
-    concurrently. Completed stories are rebased and squash-merged into master.
+    concurrently. Completed stories are rebased and squash-merged into the main branch.
     """
     # Initialize state
     if state_path.exists() and resume:
@@ -901,9 +912,9 @@ def run_parallel(
                         if ret == 0:
                             _print_progress(f'  Agent {aid}: story [{story_id}] completed', run_dir=run_dir)
 
-                            # Merge worktree into master
+                            # Merge worktree into main branch
                             if _merge_worktree(aid, story_id):
-                                _print_progress(f'  Agent {aid}: merged [{story_id}] into master', run_dir=run_dir)
+                                _print_progress(f'  Agent {aid}: merged [{story_id}] into main branch', run_dir=run_dir)
                             else:
                                 _print_progress(f'  Agent {aid}: merge FAILED for [{story_id}]', run_dir=run_dir)
                         else:
