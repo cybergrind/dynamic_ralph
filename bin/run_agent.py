@@ -12,7 +12,7 @@ import os
 import sys
 from pathlib import Path
 
-from multi_agent.constants import GIT_EMAIL, RALPH_IMAGE
+from multi_agent.constants import GIT_EMAIL, RALPH_IMAGE, get_git_author_identity
 from multi_agent.docker import build_image, docker_sock_gid, image_exists
 
 
@@ -26,6 +26,7 @@ def build_interactive_docker_command(
     if workspace is None:
         workspace = os.getcwd()
 
+    author_name, author_email = get_git_author_identity()
     home = Path.home()
     claude_dir = home / '.claude'
     config_claude = home / '.config' / 'claude'
@@ -42,9 +43,9 @@ def build_interactive_docker_command(
         '-e',
         'UV_PROJECT_ENVIRONMENT=/tmp/venv',
         '-e',
-        'GIT_AUTHOR_NAME=Claude Agent',
+        f'GIT_AUTHOR_NAME={author_name}',
         '-e',
-        f'GIT_AUTHOR_EMAIL={GIT_EMAIL}',
+        f'GIT_AUTHOR_EMAIL={author_email}',
         '-e',
         'GIT_COMMITTER_NAME=Claude Agent',
         '-e',

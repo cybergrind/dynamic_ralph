@@ -183,6 +183,36 @@ class TestClaudeCodeBuildDockerCommand:
         backend.build_docker_command(['echo'], agent_id=1, workspace='/tmp')
         mock_build.assert_called_once()
 
+    @patch('multi_agent.backends.claude_code.image_exists', return_value=True)
+    @patch('multi_agent.backends.claude_code.docker_sock_gid', return_value='999')
+    @patch(
+        'multi_agent.backends.claude_code.get_git_author_identity',
+        return_value=('Host User', 'host@example.com'),
+    )
+    def test_git_author_uses_host_identity(self, mock_identity, mock_gid, mock_exists):
+        backend = ClaudeCodeBackend()
+        cmd = backend.build_docker_command(['echo'], agent_id=1, workspace='/tmp')
+        # GIT_AUTHOR_* should use host identity
+        author_name_idx = cmd.index('GIT_AUTHOR_NAME=Host User')
+        assert cmd[author_name_idx - 1] == '-e'
+        author_email_idx = cmd.index('GIT_AUTHOR_EMAIL=host@example.com')
+        assert cmd[author_email_idx - 1] == '-e'
+
+    @patch('multi_agent.backends.claude_code.image_exists', return_value=True)
+    @patch('multi_agent.backends.claude_code.docker_sock_gid', return_value='999')
+    @patch(
+        'multi_agent.backends.claude_code.get_git_author_identity',
+        return_value=('Host User', 'host@example.com'),
+    )
+    def test_git_committer_remains_claude_agent(self, mock_identity, mock_gid, mock_exists):
+        backend = ClaudeCodeBackend()
+        cmd = backend.build_docker_command(['echo'], agent_id=1, workspace='/tmp')
+        # GIT_COMMITTER_* should still be Claude Agent / GIT_EMAIL
+        assert 'GIT_COMMITTER_NAME=Claude Agent' in cmd
+        from multi_agent.constants import GIT_EMAIL
+
+        assert f'GIT_COMMITTER_EMAIL={GIT_EMAIL}' in cmd
+
 
 class TestClaudeCodeParseEvents:
     def test_system_event(self):

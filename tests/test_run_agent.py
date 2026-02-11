@@ -88,3 +88,23 @@ class TestBuildInteractiveDockerCommand:
         main()
         mock_build.assert_not_called()
         mock_exec.assert_called_once()
+
+    @patch(
+        'bin.run_agent.get_git_author_identity',
+        return_value=('Host User', 'host@example.com'),
+    )
+    def test_git_author_uses_host_identity(self, mock_identity):
+        cmd = build_interactive_docker_command(workspace='/src')
+        assert 'GIT_AUTHOR_NAME=Host User' in cmd
+        assert 'GIT_AUTHOR_EMAIL=host@example.com' in cmd
+
+    @patch(
+        'bin.run_agent.get_git_author_identity',
+        return_value=('Host User', 'host@example.com'),
+    )
+    def test_git_committer_remains_claude_agent(self, mock_identity):
+        cmd = build_interactive_docker_command(workspace='/src')
+        assert 'GIT_COMMITTER_NAME=Claude Agent' in cmd
+        from multi_agent.constants import GIT_EMAIL
+
+        assert f'GIT_COMMITTER_EMAIL={GIT_EMAIL}' in cmd

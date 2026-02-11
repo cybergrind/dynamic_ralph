@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Iterator
 
 from multi_agent.backend import AgentEvent, AgentResult
-from multi_agent.constants import GIT_EMAIL, RALPH_IMAGE
+from multi_agent.constants import GIT_EMAIL, RALPH_IMAGE, get_git_author_identity
 from multi_agent.docker import build_image, docker_sock_gid, image_exists
 
 
@@ -61,6 +61,7 @@ class ClaudeCodeBackend:
         if not image_exists():
             build_image()
 
+        author_name, author_email = get_git_author_identity()
         compose_project = f'ralph_agent_{agent_id}'
         claude_config = Path.home() / '.claude'
         host_config_claude = Path.home() / '.config' / 'claude'
@@ -82,9 +83,9 @@ class ClaudeCodeBackend:
             '-e',
             'UV_PROJECT_ENVIRONMENT=/tmp/venv',
             '-e',
-            'GIT_AUTHOR_NAME=Claude Agent',
+            f'GIT_AUTHOR_NAME={author_name}',
             '-e',
-            f'GIT_AUTHOR_EMAIL={GIT_EMAIL}',
+            f'GIT_AUTHOR_EMAIL={author_email}',
             '-e',
             'GIT_COMMITTER_NAME=Claude Agent',
             '-e',

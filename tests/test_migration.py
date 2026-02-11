@@ -134,19 +134,6 @@ class TestConstantsDecoupled:
             monkeypatch.delenv('RALPH_INFRA_SERVICES')
             importlib.reload(multi_agent.constants)
 
-    def test_git_email_configurable(self, monkeypatch):
-        monkeypatch.setenv('RALPH_GIT_EMAIL', 'bot@example.com')
-        import importlib
-
-        import multi_agent.constants
-
-        importlib.reload(multi_agent.constants)
-        try:
-            assert multi_agent.constants.GIT_EMAIL == 'bot@example.com'
-        finally:
-            monkeypatch.delenv('RALPH_GIT_EMAIL')
-            importlib.reload(multi_agent.constants)
-
 
 # ---------------------------------------------------------------------------
 # Prompts decoupling

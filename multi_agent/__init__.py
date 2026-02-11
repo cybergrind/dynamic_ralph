@@ -6,10 +6,13 @@ from multi_agent.constants import (
     AGENT_BACKEND,
     COMPOSE_FILE,
     ENV_FILE,
+    GIT_AUTHOR_EMAIL,
+    GIT_AUTHOR_NAME,
     GIT_EMAIL,
     INFRA_SERVICES,
     RALPH_IMAGE,
     SERVICE,
+    get_git_author_identity,
 )
 from multi_agent.docker import build_image, docker_sock_gid, image_exists
 from multi_agent.filelock import FileLock, FileLockTimeout
@@ -24,6 +27,8 @@ __all__ = [
     'BASE_AGENT_INSTRUCTIONS',
     'COMPOSE_FILE',
     'ENV_FILE',
+    'GIT_AUTHOR_EMAIL',
+    'GIT_AUTHOR_NAME',
     'GIT_EMAIL',
     'INFRA_SERVICES',
     'RALPH_IMAGE',
@@ -44,6 +49,7 @@ __all__ = [
     'docker_sock_gid',
     'find_next_story',
     'get_backend',
+    'get_git_author_identity',
     'image_exists',
     'load_prd',
     'load_prd_model',
