@@ -2,7 +2,7 @@
 """Dynamic Ralph orchestrator: step-based workflow execution.
 
 Supports three modes:
-  1. One-shot: single task, ephemeral state, full 10-step workflow.
+  1. One-shot: single task, persistent state in run directory, full 10-step workflow.
   2. PRD serial: pick stories from prd.json, execute steps one at a time.
   3. PRD parallel: spawn up to N agents via git worktrees for concurrent stories.
 """
@@ -10,11 +10,10 @@ Supports three modes:
 import argparse
 import logging
 import os
-import shutil
 import subprocess
 import sys
-import tempfile
 import time
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -138,6 +137,21 @@ def _extract_summary(text: str) -> str | None:
             after_keyword = normalized[len('SUMMARY') :].lstrip(':').strip()
             return after_keyword if after_keyword else None
     return None
+
+
+def generate_run_dir() -> Path:
+    """Create a unique run directory under ``run_ralph/``.
+
+    Format: ``run_ralph/<YYYYMMDD>T<HHMMSS>_<8-char-uuid4>/``
+    Also creates ``workflow_edits/`` and ``logs/`` subdirectories inside it.
+    """
+    timestamp = datetime.now(UTC).strftime('%Y%m%dT%H%M%S')
+    unique_id = uuid.uuid4().hex[:8]
+    run_dir = Path('run_ralph') / f'{timestamp}_{unique_id}'
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / 'workflow_edits').mkdir(exist_ok=True)
+    (run_dir / 'logs').mkdir(exist_ok=True)
+    return run_dir
 
 
 def _run_agent_docker(
@@ -500,55 +514,48 @@ def _print_status_summary(state_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def run_one_shot(task: str, agent_id: int, max_turns: int | None) -> int:
+def run_one_shot(task: str, agent_id: int, max_turns: int | None, shared_dir: Path, state_path: Path) -> int:
     """Run a single task through the full step-based workflow.
 
-    Creates ephemeral state in a temp directory, runs all steps, cleans up.
+    Uses the provided run directory for state. State persists after completion.
     Returns 0 on success, 1 on failure.
     """
-    tmpdir = tempfile.mkdtemp(prefix='dynamic_ralph_oneshot_')
-    try:
-        state_path = Path(tmpdir) / 'workflow_state.json'
-        shared_dir = Path(tmpdir)
+    # Create a single story with the default workflow
+    story = StoryWorkflow(
+        story_id='oneshot',
+        title=task[:80],
+        description=task,
+        status=StoryStatus.in_progress,
+        agent_id=agent_id,
+        claimed_at=_now_iso(),
+        steps=create_default_workflow(),
+    )
 
-        # Create a single story with the default workflow
-        story = StoryWorkflow(
-            story_id='oneshot',
-            title=task[:80],
-            description=task,
-            status=StoryStatus.in_progress,
-            agent_id=agent_id,
-            claimed_at=_now_iso(),
-            steps=create_default_workflow(),
-        )
+    state = WorkflowState(
+        version=1,
+        created_at=_now_iso(),
+        prd_file='',
+        stories={'oneshot': story},
+    )
+    save_state(state, state_path)
 
-        state = WorkflowState(
-            version=1,
-            created_at=_now_iso(),
-            prd_file='',
-            stories={'oneshot': story},
-        )
-        save_state(state, state_path)
+    _print_progress(f'One-shot mode: executing task with {len(story.steps)} steps')
+    _print_progress(f'  State: {state_path}')
 
-        _print_progress(f'One-shot mode: executing task with {len(story.steps)} steps')
-        _print_progress(f'  State: {state_path}')
+    success = run_story_steps(
+        story_id='oneshot',
+        agent_id=agent_id,
+        state_path=state_path,
+        shared_dir=shared_dir,
+        max_turns=max_turns,
+    )
 
-        success = run_story_steps(
-            story_id='oneshot',
-            agent_id=agent_id,
-            state_path=state_path,
-            shared_dir=shared_dir,
-            max_turns=max_turns,
-        )
-
-        if success:
-            _print_progress('One-shot task completed successfully.')
-            return 0
-        else:
-            _print_progress('One-shot task FAILED.')
-            return 1
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
+    if success:
+        _print_progress('One-shot task completed successfully.')
+        return 0
+    else:
+        _print_progress('One-shot task FAILED.')
+        return 1
 
 
 # ---------------------------------------------------------------------------
@@ -1003,14 +1010,14 @@ def main() -> None:
     parser.add_argument(
         '--state-path',
         type=Path,
-        default=Path('workflow_state.json'),
-        help='Custom state file path (default: workflow_state.json)',
+        default=None,
+        help='Custom state file path (default: <run_dir>/workflow_state.json)',
     )
     parser.add_argument(
         '--shared-dir',
         type=Path,
-        default=Path('.'),
-        help='Shared directory for scratch files (default: .)',
+        default=None,
+        help='Shared directory for scratch files (default: auto-generated run directory)',
     )
     parser.add_argument(
         '--max-iterations',
@@ -1048,6 +1055,18 @@ def main() -> None:
     if args.build or not image_exists():
         build_image()
 
+    # Auto-generate run directory when --shared-dir is not explicitly provided
+    if args.shared_dir is None:
+        run_dir = generate_run_dir()
+        args.shared_dir = run_dir
+        if args.state_path is None:
+            args.state_path = run_dir / 'workflow_state.json'
+        _print_progress(f'Run directory: {run_dir}')
+    else:
+        # Explicit --shared-dir provided; skip run directory creation
+        if args.state_path is None:
+            args.state_path = args.shared_dir / 'workflow_state.json'
+
     # Dispatch to the appropriate mode
     if args.story_id is not None:
         # Single-story mode (used by parallel spawner)
@@ -1065,6 +1084,8 @@ def main() -> None:
             task=args.task,
             agent_id=args.agent_id,
             max_turns=args.max_turns,
+            shared_dir=args.shared_dir,
+            state_path=args.state_path,
         )
         sys.exit(rc)
 
