@@ -26,10 +26,12 @@ Thumbs.db
 .python-version
 
 # Dynamic Ralph runtime artifacts
+*.lock
 workflow_state.json
 prd.json
 scratch.md
 scratch_*.md
+scratch/
 logs/
 worktrees/
 progress.txt
