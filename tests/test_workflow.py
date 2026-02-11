@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import json
+import threading
 
 import pytest
 from pydantic import ValidationError
@@ -15,6 +17,7 @@ from multi_agent.workflow.editing import (
     remove_edit_file,
     validate_edits,
 )
+from multi_agent.workflow.executor import _tee_stderr
 from multi_agent.workflow.models import (
     AddAfterEdit,
     EditDescriptionEdit,
@@ -921,3 +924,80 @@ class TestFileLock:
         finally:
             release.set()
             proc.join(timeout=5)
+
+
+# ===========================================================================
+# executor.py — _tee_stderr
+# ===========================================================================
+
+
+class TestTeeStderr:
+    def test_basic_tee(self):
+        """Lines from the pipe are written to both terminal and log file."""
+        pipe = io.StringIO('line1\nline2\nline3\n')
+        log_file = io.StringIO()
+        terminal = io.StringIO()
+
+        _tee_stderr(pipe, log_file, terminal)
+
+        assert terminal.getvalue() == 'line1\nline2\nline3\n'
+        assert log_file.getvalue() == 'line1\nline2\nline3\n'
+
+    def test_empty_pipe(self):
+        """An empty pipe produces no output."""
+        pipe = io.StringIO('')
+        log_file = io.StringIO()
+        terminal = io.StringIO()
+
+        _tee_stderr(pipe, log_file, terminal)
+
+        assert terminal.getvalue() == ''
+        assert log_file.getvalue() == ''
+
+    def test_single_line(self):
+        """A single line is correctly teed."""
+        pipe = io.StringIO('only line\n')
+        log_file = io.StringIO()
+        terminal = io.StringIO()
+
+        _tee_stderr(pipe, log_file, terminal)
+
+        assert terminal.getvalue() == 'only line\n'
+        assert log_file.getvalue() == 'only line\n'
+
+    def test_no_trailing_newline(self):
+        """A line without a trailing newline is still captured."""
+        pipe = io.StringIO('no newline')
+        log_file = io.StringIO()
+        terminal = io.StringIO()
+
+        _tee_stderr(pipe, log_file, terminal)
+
+        assert terminal.getvalue() == 'no newline'
+        assert log_file.getvalue() == 'no newline'
+
+    def test_runs_in_thread(self):
+        """_tee_stderr works correctly when run in a background thread."""
+        pipe = io.StringIO('threaded line\n')
+        log_file = io.StringIO()
+        terminal = io.StringIO()
+
+        t = threading.Thread(target=_tee_stderr, args=(pipe, log_file, terminal))
+        t.start()
+        t.join(timeout=5)
+
+        assert not t.is_alive()
+        assert terminal.getvalue() == 'threaded line\n'
+        assert log_file.getvalue() == 'threaded line\n'
+
+    def test_line_ordering_preserved(self):
+        """Lines appear in the same order in both outputs."""
+        lines = [f'line {i}\n' for i in range(20)]
+        pipe = io.StringIO(''.join(lines))
+        log_file = io.StringIO()
+        terminal = io.StringIO()
+
+        _tee_stderr(pipe, log_file, terminal)
+
+        assert terminal.getvalue().splitlines() == log_file.getvalue().splitlines()
+        assert terminal.getvalue().splitlines() == [ln.rstrip('\n') for ln in lines]

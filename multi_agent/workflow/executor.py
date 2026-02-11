@@ -11,6 +11,7 @@ import logging
 import os
 import subprocess
 import sys
+import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -116,6 +117,24 @@ def _is_inside_docker() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Stderr tee helper
+# ---------------------------------------------------------------------------
+
+
+def _tee_stderr(pipe, log_file, terminal):
+    """Read lines from *pipe* and write each to both *log_file* and *terminal*.
+
+    Intended to run in a daemon thread so that subprocess stderr is captured
+    to a log file while still being displayed in real-time.
+    """
+    for line in pipe:
+        terminal.write(line)
+        terminal.flush()
+        log_file.write(line)
+        log_file.flush()
+
+
+# ---------------------------------------------------------------------------
 # Agent launcher
 # ---------------------------------------------------------------------------
 
@@ -159,15 +178,28 @@ def _launch_agent(
     # -- launch and stream -------------------------------------------------------
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Derive stderr log path alongside the .jsonl log
+    stderr_log_path = log_path.with_suffix('.stderr.log')
+
     process = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
-        stderr=sys.stderr,
+        stderr=subprocess.PIPE,
         text=True,
         bufsize=1,
     )
 
     log_file = open(log_path, 'w')
+    stderr_log_file = open(stderr_log_path, 'w')
+
+    # Tee stderr to both terminal and log file in a background thread
+    stderr_thread = threading.Thread(
+        target=_tee_stderr,
+        args=(process.stderr, stderr_log_file, sys.stderr),
+        daemon=True,
+    )
+    stderr_thread.start()
+
     all_events = []
     start_time = time.monotonic()
     timed_out = False
@@ -208,7 +240,9 @@ def _launch_agent(
 
         process.wait()
     finally:
+        stderr_thread.join(timeout=5)
         log_file.close()
+        stderr_log_file.close()
 
     exit_code = process.returncode or 0
     result = backend.extract_result(all_events, exit_code)
