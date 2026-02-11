@@ -172,6 +172,11 @@ class TestPromptsDecoupled:
         assert 'api/ → core/ → common/' not in BASE_AGENT_INSTRUCTIONS
         assert 'queries.py, actions.py' not in BASE_AGENT_INSTRUCTIONS
 
+    def test_prepare_system_prompt_removed(self):
+        import multi_agent.prompts
+
+        assert not hasattr(multi_agent.prompts, 'PREPARE_SYSTEM_PROMPT')
+
     def test_base_instructions_still_useful(self):
         from multi_agent.prompts import BASE_AGENT_INSTRUCTIONS
 
@@ -206,6 +211,41 @@ class TestDockerDecoupled:
         finally:
             monkeypatch.delenv('RALPH_DOCKERFILE')
             importlib.reload(multi_agent.docker)
+
+
+# ---------------------------------------------------------------------------
+# Agent prompt regression — no stale references
+# ---------------------------------------------------------------------------
+
+
+class TestNoStalePromptReferences:
+    """Verify agent-facing prompts contain no references to non-existent scripts or paths."""
+
+    FORBIDDEN_STRINGS: ClassVar[list[str]] = [
+        'run_agent_tests.sh',
+        'skills/',
+        'tasks/prd-',
+        'resources/geodb',
+    ]
+
+    def test_step_instructions_no_forbidden_strings(self):
+        from multi_agent.workflow.prompts import STEP_INSTRUCTIONS
+
+        violations = []
+        for step_type, text in STEP_INSTRUCTIONS.items():
+            for forbidden in self.FORBIDDEN_STRINGS:
+                if forbidden in text:
+                    violations.append(f'{step_type}: contains "{forbidden}"')
+        assert violations == [], 'Stale references found in STEP_INSTRUCTIONS:\n' + '\n'.join(violations)
+
+    def test_base_instructions_no_forbidden_strings(self):
+        from multi_agent.prompts import BASE_AGENT_INSTRUCTIONS
+
+        violations = []
+        for forbidden in self.FORBIDDEN_STRINGS:
+            if forbidden in BASE_AGENT_INSTRUCTIONS:
+                violations.append(f'BASE_AGENT_INSTRUCTIONS: contains "{forbidden}"')
+        assert violations == [], 'Stale references found in BASE_AGENT_INSTRUCTIONS:\n' + '\n'.join(violations)
 
 
 # ---------------------------------------------------------------------------

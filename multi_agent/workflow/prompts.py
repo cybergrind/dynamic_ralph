@@ -128,7 +128,7 @@ End your response with a SUMMARY section (3-5 lines).""",
 **You produce:** Test results with pass/fail per test, categorized failures if any.
 
 ### Instructions
-- Run tests using `./bin/run_agent_tests.sh <test_path>`.
+- Run tests using `uv run pytest <test_path>`.
 - If tests fail, categorize root causes.
 - Use workflow editing to add `coding -> linting -> initial_testing` fix cycle if needed.
 
@@ -182,7 +182,7 @@ End your response with a SUMMARY section (3-5 lines).""",
 
 ### Instructions
 - Run `uv run pre-commit run -a` and verify it passes.
-- Run `./bin/run_agent_tests.sh <test_path>` and verify tests pass.
+- Run `uv run pytest <test_path>` and verify tests pass.
 - Verify ALL acceptance criteria are met — cite file and line for each.
 - If issues found, add fix steps before this step via workflow editing, then they will \
 run before this step re-executes.
