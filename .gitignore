@@ -27,6 +27,7 @@ Thumbs.db
 
 # Dynamic Ralph runtime artifacts
 workflow_state.json
+prd.json
 scratch.md
 scratch_*.md
 logs/
