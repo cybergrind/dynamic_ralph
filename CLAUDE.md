@@ -9,18 +9,22 @@ Always run commands with `uv run`.
 ```
 dynamic_ralph/
 ├── bin/
-│   └── run_dynamic_ralph.py # Main orchestrator (entry point)
+│   ├── run_dynamic_ralph.py # Main orchestrator (entry point)
+│   └── run_agent.py         # Interactive agent runner in Docker
 ├── multi_agent/             # Core package
 │   ├── __init__.py          # Public re-exports
+│   ├── backend.py           # Agent backend abstraction
 │   ├── constants.py         # Configurable constants (env vars)
 │   ├── compose.py           # Docker Compose wrappers
 │   ├── docker.py            # Docker image helpers
 │   ├── filelock.py          # File-based locking
 │   ├── models.py            # PRD Pydantic models
 │   ├── prd.py               # PRD file I/O
-│   ├── progress.py          # Progress tracking
 │   ├── prompts.py           # Agent instructions
 │   ├── stream.py            # Event stream display
+│   ├── backends/            # Backend implementations
+│   │   ├── __init__.py
+│   │   └── claude_code.py   # Claude Code backend
 │   └── workflow/            # Workflow engine
 │       ├── __init__.py
 │       ├── editing.py       # Workflow edit validation/application
@@ -32,14 +36,15 @@ dynamic_ralph/
 │       └── steps.py         # Step type definitions
 ├── docs/
 │   ├── dynamic_ralph.md     # Dynamic Ralph design spec
-│   └── ralph.md             # Ralph pattern overview
+│   └── ralph.md             # Ralph pattern overview (historical)
 ├── tests/
 │   ├── test_workflow.py     # Workflow module tests
-│   └── test_migration.py   # Migration validation tests
+│   ├── test_migration.py    # Migration validation tests
+│   ├── test_backend.py      # Backend abstraction tests
+│   └── test_run_agent.py    # Agent runner tests
 ├── docker/
 │   └── Dockerfile           # Agent container image
-├── pyproject.toml           # Project config (uv, ruff, pytest)
-└── prd.json                 # Example PRD
+└── pyproject.toml           # Project config (uv, ruff, pytest)
 ```
 
 ## Testing
