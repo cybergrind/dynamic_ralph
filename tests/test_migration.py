@@ -28,7 +28,7 @@ class TestInfrastructureFiles:
         content = gitignore.read_text()
         assert '__pycache__/' in content
         assert '.venv/' in content
-        assert 'workflow_state.json' in content
+        assert 'run_ralph/' in content
 
     def test_dockerfile_exists(self):
         dockerfile = PROJECT_ROOT / 'docker' / 'Dockerfile'

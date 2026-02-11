@@ -26,16 +26,9 @@ Thumbs.db
 .python-version
 
 # Dynamic Ralph runtime artifacts
-*.lock
-workflow_state.json
+run_ralph/
 prd.json
-scratch.md
-scratch_*.md
-scratch/
-logs/
 worktrees/
-progress.txt
-workflow_edits/
 
 # Docker
 docker-compose.override.yml
