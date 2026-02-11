@@ -20,7 +20,6 @@ from pathlib import Path
 
 from multi_agent import (
     BASE_AGENT_INSTRUCTIONS,
-    append_progress,
     build_image,
     image_exists,
 )
@@ -65,7 +64,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 WORKTREE_DIR = Path('worktrees')
-PROGRESS_FILE = 'progress.txt'
 
 
 # ---------------------------------------------------------------------------
@@ -413,7 +411,6 @@ def run_story_steps(
                         f'[{_now_iso()}] Story {story_id} FAILED at step {step.id} ({step.type})',
                         shared_dir,
                     )
-                    append_progress(f'FAIL: story {story_id} at step {step.id} ({step.type})')
                     return False
             else:
                 return False
@@ -546,11 +543,9 @@ def run_one_shot(task: str, agent_id: int, max_turns: int | None) -> int:
 
         if success:
             _print_progress('One-shot task completed successfully.')
-            append_progress(f'PASS (one-shot): {task[:80]}')
             return 0
         else:
             _print_progress('One-shot task FAILED.')
-            append_progress(f'FAIL (one-shot): {task[:80]}')
             return 1
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -595,14 +590,12 @@ def run_serial(
                 ]
                 if not remaining:
                     _print_progress(f'\nAll stories finished after {iteration - 1} iterations.')
-                    append_progress('All stories completed (serial mode).')
                     break
                 else:
                     # Stories exist but none are assignable (blocked by deps)
                     _print_progress(
                         f'\nNo assignable stories. {len(remaining)} stories remain but are blocked by dependencies.'
                     )
-                    append_progress('Stopped: remaining stories blocked by failed dependencies.')
                     break
 
             # Claim the story
@@ -639,7 +632,6 @@ def run_serial(
                 _add_history(sw, 'story_completed', agent_id)
 
             cleanup_story_scratch(story_id, shared_dir)
-            append_progress(f'PASS: [{story_id}] {story_title}')
             _print_progress(f'  Story {story_id} completed successfully.')
         else:
             # Story already marked failed in run_story_steps
@@ -649,7 +641,6 @@ def run_serial(
         _print_status_summary(state_path)
     else:
         _print_progress(f'\nMax iterations ({max_iterations}) reached.')
-        append_progress(f'Stopped after {max_iterations} iterations (serial mode).')
 
 
 # ---------------------------------------------------------------------------
@@ -855,12 +846,10 @@ def run_parallel(
                 ]
                 if not remaining:
                     _print_progress('\nAll stories finished (parallel mode).')
-                    append_progress('All stories completed (parallel mode).')
                 else:
                     _print_progress(
                         f'\nNo assignable stories. {len(remaining)} stories remain but are blocked or in progress.'
                     )
-                    append_progress('Stopped: remaining stories blocked.')
                 break
 
             # Wait for any agent to finish
@@ -964,11 +953,9 @@ def run_single_story(
             _add_history(sw, 'story_completed', agent_id)
 
         cleanup_story_scratch(story_id, shared_dir)
-        append_progress(f'PASS: [{story_id}] (agent {agent_id})')
         _print_progress(f'Agent {agent_id}: story [{story_id}] completed successfully.')
         sys.exit(0)
     else:
-        append_progress(f'FAIL: [{story_id}] (agent {agent_id})')
         _print_progress(f'Agent {agent_id}: story [{story_id}] FAILED.')
         sys.exit(1)
 
