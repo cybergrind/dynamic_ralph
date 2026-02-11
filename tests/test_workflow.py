@@ -618,39 +618,6 @@ class TestEditFileParsing:
         remove_edit_file('US-001', tmp_path)
         assert not edit_file.exists()
 
-    def test_parse_edit_file_defaults_to_cwd(self, tmp_path, monkeypatch):
-        """parse_edit_file with no shared_dir reads from CWD/workflow_edits/."""
-        monkeypatch.chdir(tmp_path)
-        edits_dir = tmp_path / 'workflow_edits'
-        edits_dir.mkdir()
-        edit_file = edits_dir / 'US-001.json'
-        edit_file.write_text(json.dumps({'operation': 'skip', 'target_step_id': 'step-009', 'reason': 'test'}))
-        ops = parse_edit_file('US-001')
-        assert ops is not None
-        assert len(ops) == 1
-        assert isinstance(ops[0], SkipEdit)
-
-    def test_remove_edit_file_defaults_to_cwd(self, tmp_path, monkeypatch):
-        """remove_edit_file with no shared_dir deletes from CWD/workflow_edits/."""
-        monkeypatch.chdir(tmp_path)
-        edits_dir = tmp_path / 'workflow_edits'
-        edits_dir.mkdir()
-        edit_file = edits_dir / 'US-001.json'
-        edit_file.write_text('[]')
-        remove_edit_file('US-001')
-        assert not edit_file.exists()
-
-    def test_discard_edit_file_defaults_to_cwd(self, tmp_path, monkeypatch):
-        """discard_edit_file with no shared_dir moves file under CWD/workflow_edits/failed/."""
-        monkeypatch.chdir(tmp_path)
-        edits_dir = tmp_path / 'workflow_edits'
-        edits_dir.mkdir()
-        edit_file = edits_dir / 'US-001.json'
-        edit_file.write_text('{"bad": true}')
-        discard_edit_file('US-001')
-        assert not edit_file.exists()
-        assert (edits_dir / 'failed' / 'US-001.json').exists()
-
     def test_discard_edit_file_nonexistent_noop(self, tmp_path):
         """discard_edit_file is a no-op when the file does not exist."""
         discard_edit_file('US-999', tmp_path)  # should not raise

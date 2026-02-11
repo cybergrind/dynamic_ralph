@@ -35,7 +35,7 @@ EDITS_DIR = Path('workflow_edits')
 # ---------------------------------------------------------------------------
 
 
-def parse_edit_file(story_id: str, shared_dir: Path = Path('.')) -> list[EditOperation] | None:
+def parse_edit_file(story_id: str, shared_dir: Path) -> list[EditOperation] | None:
     """Read and parse a workflow edit request file.
 
     Returns None if no edit file exists. Raises ValueError on invalid JSON.
@@ -71,7 +71,7 @@ def parse_edit_file(story_id: str, shared_dir: Path = Path('.')) -> list[EditOpe
     return operations
 
 
-def discard_edit_file(story_id: str, shared_dir: Path = Path('.')) -> None:
+def discard_edit_file(story_id: str, shared_dir: Path) -> None:
     """Move edit file to failed/ subdirectory for debugging."""
     edit_path = shared_dir / EDITS_DIR / f'{story_id}.json'
     if not edit_path.exists():
@@ -81,7 +81,7 @@ def discard_edit_file(story_id: str, shared_dir: Path = Path('.')) -> None:
     edit_path.rename(failed_dir / f'{story_id}.json')
 
 
-def remove_edit_file(story_id: str, shared_dir: Path = Path('.')) -> None:
+def remove_edit_file(story_id: str, shared_dir: Path) -> None:
     """Delete the edit file after successful application."""
     edit_path = shared_dir / EDITS_DIR / f'{story_id}.json'
     if edit_path.exists():

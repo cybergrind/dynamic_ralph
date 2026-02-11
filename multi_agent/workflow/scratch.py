@@ -14,8 +14,6 @@ from multi_agent.filelock import FileLock
 
 LOCK_TIMEOUT: int = 60
 
-DEFAULT_SHARED_DIR = Path('.')
-
 GLOBAL_SCRATCH = 'scratch.md'
 GLOBAL_SCRATCH_LOCK = 'scratch.md.lock'
 
@@ -37,7 +35,7 @@ def _story_scratch_path(story_id: str, shared_dir: Path) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def read_global_scratch(shared_dir: Path = DEFAULT_SHARED_DIR) -> str:
+def read_global_scratch(shared_dir: Path) -> str:
     """Read scratch.md content. Return empty string if file doesn't exist."""
     path = _global_scratch_path(shared_dir)
     if not path.exists():
@@ -45,7 +43,7 @@ def read_global_scratch(shared_dir: Path = DEFAULT_SHARED_DIR) -> str:
     return path.read_text()
 
 
-def write_global_scratch(content: str, shared_dir: Path = DEFAULT_SHARED_DIR) -> None:
+def write_global_scratch(content: str, shared_dir: Path) -> None:
     """Write to scratch.md with FileLock protection.
 
     Uses atomic write (temp file + rename) to avoid partial reads.
@@ -69,7 +67,7 @@ def write_global_scratch(content: str, shared_dir: Path = DEFAULT_SHARED_DIR) ->
             raise
 
 
-def append_global_scratch(message: str, shared_dir: Path = DEFAULT_SHARED_DIR) -> None:
+def append_global_scratch(message: str, shared_dir: Path) -> None:
     """Append a line to scratch.md with FileLock protection.
 
     Creates the file if it doesn't exist.
@@ -87,7 +85,7 @@ def append_global_scratch(message: str, shared_dir: Path = DEFAULT_SHARED_DIR) -
 # ---------------------------------------------------------------------------
 
 
-def read_story_scratch(story_id: str, shared_dir: Path = DEFAULT_SHARED_DIR) -> str:
+def read_story_scratch(story_id: str, shared_dir: Path) -> str:
     """Read scratch_<story_id>.md content. Return empty string if file doesn't exist."""
     path = _story_scratch_path(story_id, shared_dir)
     if not path.exists():
@@ -95,20 +93,20 @@ def read_story_scratch(story_id: str, shared_dir: Path = DEFAULT_SHARED_DIR) -> 
     return path.read_text()
 
 
-def write_story_scratch(story_id: str, content: str, shared_dir: Path = DEFAULT_SHARED_DIR) -> None:
+def write_story_scratch(story_id: str, content: str, shared_dir: Path) -> None:
     """Write to scratch_<story_id>.md. No locking needed (single writer per story)."""
     path = _story_scratch_path(story_id, shared_dir)
     path.write_text(content)
 
 
-def append_story_scratch(story_id: str, message: str, shared_dir: Path = DEFAULT_SHARED_DIR) -> None:
+def append_story_scratch(story_id: str, message: str, shared_dir: Path) -> None:
     """Append a line to story scratch file. Creates file if it doesn't exist."""
     path = _story_scratch_path(story_id, shared_dir)
     with open(path, 'a') as f:
         f.write(message + '\n')
 
 
-def cleanup_story_scratch(story_id: str, shared_dir: Path = DEFAULT_SHARED_DIR) -> None:
+def cleanup_story_scratch(story_id: str, shared_dir: Path) -> None:
     """Delete the per-story scratch file when the story completes."""
     path = _story_scratch_path(story_id, shared_dir)
     if path.exists():

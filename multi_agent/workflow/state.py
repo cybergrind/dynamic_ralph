@@ -14,18 +14,17 @@ from multi_agent.filelock import FileLock
 from multi_agent.workflow.models import StoryStatus, StoryWorkflow, WorkflowState
 
 
-STATE_FILE = Path('workflow_state.json')
 LOCK_TIMEOUT: int = 60
 
 
-def load_state(state_path: Path = STATE_FILE) -> WorkflowState:
+def load_state(state_path: Path) -> WorkflowState:
     """Load workflow state from a JSON file, parsing it with Pydantic."""
     text = state_path.read_text(encoding='utf-8')
     data = json.loads(text)
     return WorkflowState.model_validate(data)
 
 
-def save_state(state: WorkflowState, state_path: Path = STATE_FILE) -> None:
+def save_state(state: WorkflowState, state_path: Path) -> None:
     """Write state atomically: write to a temp file in the same directory, then rename."""
     content = json.dumps(state.model_dump(), indent=2)
     parent = state_path.parent
@@ -44,7 +43,7 @@ def save_state(state: WorkflowState, state_path: Path = STATE_FILE) -> None:
 
 
 @contextmanager
-def locked_state(state_path: Path = STATE_FILE):
+def locked_state(state_path: Path):
     """Context manager: acquire FileLock, load state, yield it, save on exit.
 
     Usage::
@@ -63,7 +62,7 @@ def locked_state(state_path: Path = STATE_FILE):
 
 def initialize_state_from_prd(
     prd_path: Path,
-    state_path: Path = STATE_FILE,
+    state_path: Path,
 ) -> WorkflowState:
     """Read a prd.json file and create a WorkflowState with one StoryWorkflow per story.
 
