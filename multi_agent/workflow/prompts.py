@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from multi_agent.workflow.models import Step, StepStatus, StepType, StoryWorkflow
 
 
@@ -40,8 +42,8 @@ End your response with a SUMMARY section (3-5 lines) capturing key findings.""",
 - Write the plan to your story scratch file.
 
 ### Workflow Editing
-You may modify remaining steps. Write a JSON file to `workflow_edits/{story_id}.json` \
-with operations: add_after, split, skip, reorder, edit_description.
+You may modify remaining steps by writing a JSON edit file (path provided below in the Workflow Editing section). \
+Supported operations: add_after, split, skip, reorder, edit_description.
 
 ### Exit Criteria
 Plan covers all acceptance criteria; files to modify are identified.
@@ -209,6 +211,7 @@ def compose_step_prompt(
     global_scratch: str,
     story_scratch: str,
     base_instructions: str,
+    shared_dir: Path | None = None,
 ) -> str:
     """Build the full prompt for a step invocation.
 
@@ -262,9 +265,10 @@ def compose_step_prompt(
 
     if STEP_ALLOWS_EDITING.get(step.type, False):
         parts.append('\n---\n\n## Workflow Editing\n')
+        edits_prefix = f'{shared_dir}/' if shared_dir else ''
         parts.append(
             f'To modify remaining steps, write a JSON file to '
-            f'`workflow_edits/{story.story_id}.json`.\n'
+            f'`{edits_prefix}workflow_edits/{story.story_id}.json`.\n'
             f'Supported operations: add_after, split, skip, reorder, '
             f'edit_description, restart.\n'
             f'See the step instructions above for when to use editing.\n\n'

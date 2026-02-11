@@ -322,6 +322,7 @@ def execute_step(
         global_scratch=global_scratch,
         story_scratch=story_scratch,
         base_instructions=BASE_AGENT_INSTRUCTIONS,
+        shared_dir=shared_dir,
     )
 
     # ---- (e) Launch agent -----------------------------------------------------

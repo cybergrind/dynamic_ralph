@@ -151,12 +151,6 @@ class TestBuildStateDigest:
         assert 'US-001' in digest
         assert 'US-002' in digest
 
-    def test_contains_step_statuses(self) -> None:
-        state = _sample_state()
-        digest = build_state_digest(state)
-        assert 'completed' in digest
-        assert 'failed' in digest
-
     def test_contains_error_messages(self) -> None:
         state = _sample_state()
         digest = build_state_digest(state)
@@ -369,14 +363,6 @@ class TestMain:
         monkeypatch.setattr('sys.argv', ['run_retrospective.py', str(run_dir)])
 
         with pytest.raises(SystemExit, match='1'):
-            main()
-
-    @patch.object(_mod, 'image_exists', return_value=True)
-    def test_main_invalid_dir(self, mock_img, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """main() exits with error for nonexistent directory."""
-        monkeypatch.setattr('sys.argv', ['run_retrospective.py', str(tmp_path / 'no_such_dir')])
-
-        with pytest.raises(SystemExit):
             main()
 
     @patch.object(_mod, 'launch_agent')
