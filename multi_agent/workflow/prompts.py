@@ -267,8 +267,35 @@ def compose_step_prompt(
             f'`workflow_edits/{story.story_id}.json`.\n'
             f'Supported operations: add_after, split, skip, reorder, '
             f'edit_description, restart.\n'
-            f'See the step instructions above for when to use editing.'
+            f'See the step instructions above for when to use editing.\n\n'
+            f'**Required JSON schema** — each object MUST use these exact field names:\n\n'
+            f'```json\n'
+            f'// skip a step\n'
+            f'{{"operation": "skip", "target_step_id": "step-003", "reason": "..."}}\n\n'
+            f'// add steps after a target\n'
+            f'{{"operation": "add_after", "target_step_id": "step-005", "reason": "...",\n'
+            f' "new_steps": [{{"type": "coding", "description": "..."}}]}}\n\n'
+            f'// split a step into multiple\n'
+            f'{{"operation": "split", "target_step_id": "step-005", "reason": "...",\n'
+            f' "replacement_steps": [{{"type": "coding", "description": "Part 1"}},\n'
+            f'                       {{"type": "coding", "description": "Part 2"}}]}}\n\n'
+            f'// edit a step description\n'
+            f'{{"operation": "edit_description", "target_step_id": "step-005",\n'
+            f' "reason": "...", "new_description": "..."}}\n\n'
+            f'// reorder all pending steps (final_review must be last)\n'
+            f'{{"operation": "reorder", "reason": "...", "new_order": ["step-003", "step-005", ...]}}\n\n'
+            f'// restart the current in-progress step\n'
+            f'{{"operation": "restart", "target_step_id": "step-005",\n'
+            f' "reason": "...", "new_description": "..."}}\n'
+            f'```\n\n'
+            f'IMPORTANT: Use `"target_step_id"` (NOT `"step_id"`). '
+            f'Use `"operation"` (NOT `"op"`).\n'
+            f'Write the file as a JSON array: `[{{"operation": "skip", ...}}, ...]`'
         )
+        remaining = _format_remaining_steps(story, step)
+        if remaining:
+            parts.append('\n### Remaining Steps\n')
+            parts.append(remaining)
 
     return '\n'.join(parts)
 
@@ -281,6 +308,31 @@ def _get_story_description(story: StoryWorkflow) -> str:
 def _get_story_acceptance_criteria(story: StoryWorkflow) -> list[str]:
     """Extract acceptance criteria from story metadata."""
     return story.acceptance_criteria
+
+
+def _format_remaining_steps(story: StoryWorkflow, current_step: Step) -> str:
+    """Format remaining pending steps with IDs, types, descriptions, and mandatory flags.
+
+    This gives agents the information they need to write valid workflow edit
+    operations (skip, reorder, edit_description, etc.).
+    """
+    from multi_agent.workflow.steps import MANDATORY_STEPS
+
+    lines: list[str] = []
+    past_current = False
+    for step in story.steps:
+        if step.id == current_step.id:
+            past_current = True
+            continue
+        if not past_current:
+            continue
+        if step.status != StepStatus.pending:
+            continue
+        mandatory = step.type in MANDATORY_STEPS
+        flag = ' **(mandatory)**' if mandatory else ''
+        desc = f' — {step.description}' if step.description else ''
+        lines.append(f'- `{step.id}` {step.type}{desc}{flag}')
+    return '\n'.join(lines)
 
 
 def _collect_prior_notes(story: StoryWorkflow, current_step: Step) -> str:

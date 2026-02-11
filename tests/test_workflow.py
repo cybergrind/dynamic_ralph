@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from pydantic import ValidationError
 
 from multi_agent.workflow.editing import (
     EditValidationError,
@@ -29,7 +30,11 @@ from multi_agent.workflow.models import (
     StoryWorkflow,
     WorkflowState,
 )
-from multi_agent.workflow.prompts import STEP_INSTRUCTIONS, compose_step_prompt
+from multi_agent.workflow.prompts import (
+    STEP_INSTRUCTIONS,
+    _format_remaining_steps,
+    compose_step_prompt,
+)
 from multi_agent.workflow.scratch import (
     append_global_scratch,
     append_story_scratch,
@@ -651,6 +656,124 @@ class TestEditFileParsing:
         discard_edit_file('US-999', tmp_path)  # should not raise
 
 
+class TestEditRoundTrip:
+    """Integration tests: write edit file -> parse -> validate -> apply."""
+
+    def test_skip_roundtrip(self, tmp_path):
+        """Write a skip edit file with correct schema, parse, validate, apply."""
+        edits_dir = tmp_path / 'workflow_edits'
+        edits_dir.mkdir()
+        (edits_dir / 'US-001.json').write_text(
+            json.dumps(
+                [
+                    {'operation': 'skip', 'target_step_id': 'step-009', 'reason': 'not needed'},
+                ]
+            )
+        )
+
+        story = _make_story()
+        ops = parse_edit_file('US-001', tmp_path)
+        assert ops is not None
+        assert len(ops) == 1
+        validate_edits(story, ops)
+        apply_edits(story, ops)
+
+        step = story.find_step('step-009')
+        assert step.status == StepStatus.skipped
+        assert step.skip_reason == 'not needed'
+        remove_edit_file('US-001', tmp_path)
+        assert not (edits_dir / 'US-001.json').exists()
+
+    def test_multiple_skips_roundtrip(self, tmp_path):
+        """Write multiple skip edits, parse, validate, apply all."""
+        edits_dir = tmp_path / 'workflow_edits'
+        edits_dir.mkdir()
+        (edits_dir / 'US-001.json').write_text(
+            json.dumps(
+                [
+                    {'operation': 'skip', 'target_step_id': 'step-003', 'reason': 'skip arch'},
+                    {'operation': 'skip', 'target_step_id': 'step-004', 'reason': 'skip test arch'},
+                    {'operation': 'skip', 'target_step_id': 'step-005', 'reason': 'skip coding'},
+                    {'operation': 'skip', 'target_step_id': 'step-009', 'reason': 'skip prune'},
+                ]
+            )
+        )
+
+        story = _make_story()
+        ops = parse_edit_file('US-001', tmp_path)
+        assert ops is not None
+        assert len(ops) == 4
+        validate_edits(story, ops)
+        apply_edits(story, ops)
+
+        for sid in ('step-003', 'step-004', 'step-005', 'step-009'):
+            assert story.find_step(sid).status == StepStatus.skipped
+
+    def test_wrong_field_name_step_id_fails(self, tmp_path):
+        """Edit file using 'step_id' instead of 'target_step_id' must fail parsing."""
+        edits_dir = tmp_path / 'workflow_edits'
+        edits_dir.mkdir()
+        (edits_dir / 'US-001.json').write_text(
+            json.dumps(
+                [
+                    {'operation': 'skip', 'step_id': 'step-009', 'reason': 'test'},
+                ]
+            )
+        )
+
+        with pytest.raises(ValidationError, match='target_step_id'):
+            parse_edit_file('US-001', tmp_path)
+
+    def test_add_after_roundtrip(self, tmp_path):
+        """Write an add_after edit file, parse, validate, apply."""
+        edits_dir = tmp_path / 'workflow_edits'
+        edits_dir.mkdir()
+        (edits_dir / 'US-001.json').write_text(
+            json.dumps(
+                [
+                    {
+                        'operation': 'add_after',
+                        'target_step_id': 'step-005',
+                        'reason': 'need extra coding round',
+                        'new_steps': [
+                            {'type': 'coding', 'description': 'Extra coding pass'},
+                        ],
+                    }
+                ]
+            )
+        )
+
+        story = _make_story()
+        ops = parse_edit_file('US-001', tmp_path)
+        assert ops is not None
+        validate_edits(story, ops)
+        apply_edits(story, ops)
+
+        assert len(story.steps) == 11
+        coding_idx = next(i for i, s in enumerate(story.steps) if s.id == 'step-005')
+        assert story.steps[coding_idx + 1].description == 'Extra coding pass'
+
+    def test_discard_on_validation_failure(self, tmp_path):
+        """When validation fails, discard_edit_file moves file to failed/."""
+        edits_dir = tmp_path / 'workflow_edits'
+        edits_dir.mkdir()
+        (edits_dir / 'US-001.json').write_text(
+            json.dumps(
+                [
+                    {'operation': 'skip', 'target_step_id': 'step-006', 'reason': 'skip mandatory'},
+                ]
+            )
+        )
+
+        story = _make_story()
+        ops = parse_edit_file('US-001', tmp_path)
+        with pytest.raises(EditValidationError):
+            validate_edits(story, ops)
+        discard_edit_file('US-001', tmp_path)
+        assert not (edits_dir / 'US-001.json').exists()
+        assert (edits_dir / 'failed' / 'US-001.json').exists()
+
+
 # ===========================================================================
 # scratch.py
 # ===========================================================================
@@ -743,12 +866,47 @@ class TestPrompts:
         prompt = compose_step_prompt(story, step, '', '', '')
         assert 'workflow_edits' in prompt
 
+    def test_compose_step_prompt_editing_section_shows_json_schema(self):
+        story = _make_story()
+        step = story.steps[1]  # planning — allows editing
+        prompt = compose_step_prompt(story, step, '', '', '')
+        assert 'target_step_id' in prompt
+        assert '"operation": "skip"' in prompt
+        assert '"operation": "add_after"' in prompt
+        assert 'NOT `"step_id"`' in prompt
+
     def test_compose_step_prompt_no_editing_for_non_editable_steps(self):
         story = _make_story()
         # context_gathering does not allow editing
         step = story.steps[0]
         prompt = compose_step_prompt(story, step, '', '', '')
         assert 'workflow_edits/US-001.json' not in prompt
+
+    def test_compose_step_prompt_lists_remaining_step_ids(self):
+        story = _make_story()
+        # planning (step-002) allows editing; steps 003-010 are pending after it
+        step = story.steps[1]
+        prompt = compose_step_prompt(story, step, '', '', '')
+        assert 'Remaining Steps' in prompt
+        for s in story.steps[2:]:
+            assert s.id in prompt
+
+    def test_format_remaining_steps_shows_mandatory_flag(self):
+        story = _make_story()
+        step = story.steps[1]  # planning
+        remaining = _format_remaining_steps(story, step)
+        # linting (step-006) and final_review (step-010) are mandatory
+        assert 'step-006' in remaining
+        assert '**(mandatory)**' in remaining
+        # coding (step-005) is not mandatory
+        assert 'step-005' in remaining
+
+    def test_format_remaining_steps_excludes_skipped(self):
+        story = _make_story()
+        story.steps[8].status = StepStatus.skipped  # step-009 prune_tests
+        step = story.steps[1]  # planning
+        remaining = _format_remaining_steps(story, step)
+        assert 'step-009' not in remaining
 
 
 # ===========================================================================
