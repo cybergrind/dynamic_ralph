@@ -291,7 +291,7 @@ def execute_step(
     )
 
     # ---- (e) Launch agent -----------------------------------------------------
-    log_dir = Path('logs') / story_id
+    log_dir = shared_dir / 'logs' / story_id
     log_path = log_dir / f'{step_id}.jsonl'
 
     timeout = STEP_TIMEOUTS.get(step.type, 900)
@@ -358,7 +358,7 @@ def execute_step(
         discard_edit_file(story_id, shared_dir)
 
         # Save the diff for debugging
-        diff_path = Path('logs') / story_id / f'{step_id}.diff'
+        diff_path = shared_dir / 'logs' / story_id / f'{step_id}.diff'
         _git_save_diff(diff_path, git_sha_at_start)
 
         # Reset to clean state

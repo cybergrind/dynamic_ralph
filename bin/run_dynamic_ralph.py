@@ -379,7 +379,7 @@ def execute_step(
             _add_history(sw, 'step_failed', agent_id, step.id, returncode=returncode, elapsed_secs=round(elapsed, 1))
             # Save diff and reset git on failure (per spec)
             if step.git_sha_at_start:
-                diff_path = Path('logs') / story.story_id / f'{step_id}.diff'
+                diff_path = shared_dir / 'logs' / story.story_id / f'{step_id}.diff'
                 _save_diff_and_reset(diff_path, step.git_sha_at_start)
 
     status_label = 'completed' if success else 'FAILED'
