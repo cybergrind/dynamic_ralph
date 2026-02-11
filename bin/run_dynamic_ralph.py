@@ -10,6 +10,7 @@ Supports three modes:
 import argparse
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -696,12 +697,16 @@ def _create_worktree(agent_id: int, story_id: str) -> Path:
 
     WORKTREE_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Remove stale worktree if exists
+    # Clean up stale worktree entries then remove this worktree if registered
+    subprocess.run(['git', 'worktree', 'prune'], capture_output=True)
+    subprocess.run(
+        ['git', 'worktree', 'remove', '--force', str(worktree_path)],
+        capture_output=True,
+    )
+
+    # Remove leftover directory (git worktree remove may have failed if already pruned)
     if worktree_path.exists():
-        subprocess.run(
-            ['git', 'worktree', 'remove', '--force', str(worktree_path)],
-            capture_output=True,
-        )
+        shutil.rmtree(worktree_path)
 
     # Delete branch if it exists from a previous run
     subprocess.run(
