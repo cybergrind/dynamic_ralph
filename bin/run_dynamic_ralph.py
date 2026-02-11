@@ -8,11 +8,13 @@ Supports three modes:
 """
 
 import argparse
+import json
 import logging
 import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from datetime import UTC, datetime
@@ -33,6 +35,7 @@ from multi_agent.workflow.editing import (
     remove_edit_file,
     validate_edits,
 )
+from multi_agent.workflow.executor import _tee_stderr
 from multi_agent.workflow.models import (
     HistoryEntry,
     StepStatus,
@@ -177,12 +180,21 @@ def generate_run_dir() -> Path:
 
 
 def _run_agent_docker(
-    task: str, agent_id: int, max_turns: int | None, workspace: str | None = None, shared_dir: str | None = None
+    task: str,
+    agent_id: int,
+    max_turns: int | None,
+    workspace: str | None = None,
+    shared_dir: str | None = None,
+    log_path: Path | None = None,
 ) -> tuple[int, dict]:
     """Launch an agent in a Docker container and stream events.
 
     Uses the configured backend (via ``get_backend()``) to build commands,
     parse events, and extract results.
+
+    When *log_path* is provided, events are written as JSONL to that file and
+    stderr is tee'd to a ``.stderr.log`` sibling file (while still being
+    displayed on the terminal in real-time).
 
     Returns (returncode, result_info) where result_info contains cost/token data
     from the final 'result' event plus the last assistant text for summary extraction.
@@ -204,24 +216,66 @@ def _run_agent_docker(
         workspace=workspace,
     )
 
+    # When log_path is set, capture stderr via PIPE so we can tee it.
+    # Otherwise, pass stderr straight through to the terminal.
+    capture_stderr = log_path is not None
+    stderr_arg = subprocess.PIPE if capture_stderr else sys.stderr
+
+    if log_path is not None:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+
     process = subprocess.Popen(
         docker_cmd,
         stdout=subprocess.PIPE,
-        stderr=sys.stderr,
+        stderr=stderr_arg,
         text=True,
         bufsize=1,
     )
 
-    def _line_iter():
-        for line in process.stdout:  # type: ignore[union-attr]
-            yield line
+    # Set up stderr tee thread when logging
+    stderr_log_file = None
+    stderr_thread = None
+    if capture_stderr:
+        stderr_log_path = log_path.with_suffix('.stderr.log')
+        stderr_log_file = open(stderr_log_path, 'w')
+        stderr_thread = threading.Thread(
+            target=_tee_stderr,
+            args=(process.stderr, stderr_log_file, sys.stderr),
+            daemon=True,
+        )
+        stderr_thread.start()
 
-    all_events = []
-    for event in backend.parse_events(_line_iter()):
-        all_events.append(event)
-        display_agent_event(event)
+    jsonl_file = None
+    if log_path is not None:
+        jsonl_file = open(log_path, 'w')
 
-    process.wait()
+    try:
+
+        def _line_iter():
+            for line in process.stdout:  # type: ignore[union-attr]
+                yield line
+
+        all_events = []
+        for event in backend.parse_events(_line_iter()):
+            all_events.append(event)
+            display_agent_event(event)
+
+            # Write JSONL log
+            if jsonl_file is not None:
+                if event.raw:
+                    jsonl_file.write(json.dumps(event.raw) + '\n')
+                else:
+                    jsonl_file.write(f'# {event.text}\n')
+                jsonl_file.flush()
+
+        process.wait()
+    finally:
+        if stderr_thread is not None:
+            stderr_thread.join(timeout=5)
+        if jsonl_file is not None:
+            jsonl_file.close()
+        if stderr_log_file is not None:
+            stderr_log_file.close()
 
     agent_result = backend.extract_result(all_events, process.returncode or 0)
 
@@ -310,12 +364,17 @@ def execute_step(
         f'  [{story.story_id}] Step {step_id} ({step_obj.type}) starting (timeout={timeout_secs}s)', run_dir=run_dir
     )
 
+    # Construct log path for this step
+    log_dir = shared_dir / 'logs' / story.story_id
+    log_path = log_dir / f'{step_id}.jsonl'
+
     # Launch the agent
     start_time = time.monotonic()
     returncode, result_info = _run_agent_docker(
         task=prompt,
         agent_id=agent_id,
         max_turns=effective_max_turns,
+        log_path=log_path,
     )
     elapsed = time.monotonic() - start_time
 

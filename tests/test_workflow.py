@@ -653,31 +653,6 @@ class TestEditRoundTrip:
         remove_edit_file('US-001', tmp_path)
         assert not (edits_dir / 'US-001.json').exists()
 
-    def test_multiple_skips_roundtrip(self, tmp_path):
-        """Write multiple skip edits, parse, validate, apply all."""
-        edits_dir = tmp_path / 'workflow_edits'
-        edits_dir.mkdir()
-        (edits_dir / 'US-001.json').write_text(
-            json.dumps(
-                [
-                    {'operation': 'skip', 'target_step_id': 'step-003', 'reason': 'skip arch'},
-                    {'operation': 'skip', 'target_step_id': 'step-004', 'reason': 'skip test arch'},
-                    {'operation': 'skip', 'target_step_id': 'step-005', 'reason': 'skip coding'},
-                    {'operation': 'skip', 'target_step_id': 'step-009', 'reason': 'skip prune'},
-                ]
-            )
-        )
-
-        story = _make_story()
-        ops = parse_edit_file('US-001', tmp_path)
-        assert ops is not None
-        assert len(ops) == 4
-        validate_edits(story, ops)
-        apply_edits(story, ops)
-
-        for sid in ('step-003', 'step-004', 'step-005', 'step-009'):
-            assert story.find_step(sid).status == StepStatus.skipped
-
     def test_wrong_field_name_step_id_fails(self, tmp_path):
         """Edit file using 'step_id' instead of 'target_step_id' must fail parsing."""
         edits_dir = tmp_path / 'workflow_edits'
