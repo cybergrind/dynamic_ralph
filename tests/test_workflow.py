@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -804,21 +805,21 @@ class TestPrompts:
     def test_compose_step_prompt_contains_story(self):
         story = _make_story()
         step = story.steps[0]
-        prompt = compose_step_prompt(story, step, '', '', '')
+        prompt = compose_step_prompt(story, step, '', '', '', shared_dir=Path('/test/shared'))
         assert 'Test story' in prompt
         assert 'US-001' in prompt
 
     def test_compose_step_prompt_contains_acceptance_criteria(self):
         story = _make_story()
         step = story.steps[0]
-        prompt = compose_step_prompt(story, step, '', '', '')
+        prompt = compose_step_prompt(story, step, '', '', '', shared_dir=Path('/test/shared'))
         assert 'AC-1' in prompt
         assert 'AC-2' in prompt
 
     def test_compose_step_prompt_contains_step_instructions(self):
         story = _make_story()
         step = story.steps[0]  # context_gathering
-        prompt = compose_step_prompt(story, step, '', '', '')
+        prompt = compose_step_prompt(story, step, '', '', '', shared_dir=Path('/test/shared'))
         assert 'Context Gathering' in prompt
 
     def test_compose_step_prompt_includes_prior_notes(self):
@@ -826,13 +827,13 @@ class TestPrompts:
         story.steps[0].status = StepStatus.completed
         story.steps[0].notes = 'Found relevant models in profiles/models.py'
         step = story.steps[1]  # planning
-        prompt = compose_step_prompt(story, step, '', '', '')
+        prompt = compose_step_prompt(story, step, '', '', '', shared_dir=Path('/test/shared'))
         assert 'Found relevant models' in prompt
 
     def test_compose_step_prompt_includes_scratch(self):
         story = _make_story()
         step = story.steps[0]
-        prompt = compose_step_prompt(story, step, 'Global note', 'Story note', '')
+        prompt = compose_step_prompt(story, step, 'Global note', 'Story note', '', shared_dir=Path('/test/shared'))
         assert 'Global note' in prompt
         assert 'Story note' in prompt
 
@@ -840,13 +841,13 @@ class TestPrompts:
         story = _make_story()
         # planning step allows editing
         step = story.steps[1]
-        prompt = compose_step_prompt(story, step, '', '', '')
+        prompt = compose_step_prompt(story, step, '', '', '', shared_dir=Path('/test/shared'))
         assert 'workflow_edits' in prompt
 
     def test_compose_step_prompt_editing_section_shows_json_schema(self):
         story = _make_story()
         step = story.steps[1]  # planning — allows editing
-        prompt = compose_step_prompt(story, step, '', '', '')
+        prompt = compose_step_prompt(story, step, '', '', '', shared_dir=Path('/test/shared'))
         assert 'target_step_id' in prompt
         assert '"operation": "skip"' in prompt
         assert '"operation": "add_after"' in prompt
@@ -856,14 +857,14 @@ class TestPrompts:
         story = _make_story()
         # context_gathering does not allow editing
         step = story.steps[0]
-        prompt = compose_step_prompt(story, step, '', '', '')
+        prompt = compose_step_prompt(story, step, '', '', '', shared_dir=Path('/test/shared'))
         assert 'workflow_edits/US-001.json' not in prompt
 
     def test_compose_step_prompt_lists_remaining_step_ids(self):
         story = _make_story()
         # planning (step-002) allows editing; steps 003-010 are pending after it
         step = story.steps[1]
-        prompt = compose_step_prompt(story, step, '', '', '')
+        prompt = compose_step_prompt(story, step, '', '', '', shared_dir=Path('/test/shared'))
         assert 'Remaining Steps' in prompt
         for s in story.steps[2:]:
             assert s.id in prompt
@@ -886,8 +887,6 @@ class TestPrompts:
         assert 'step-009' not in remaining
 
     def test_compose_step_prompt_includes_scratch_file_paths(self):
-        from pathlib import Path
-
         story = _make_story()
         step = story.steps[0]  # context_gathering (non-editable step)
         shared = Path('/run/shared')
@@ -895,12 +894,6 @@ class TestPrompts:
         assert '## Scratch Files' in prompt
         assert '/run/shared/scratch_US-001.md' in prompt
         assert '/run/shared/scratch.md' in prompt
-
-    def test_compose_step_prompt_no_scratch_paths_without_shared_dir(self):
-        story = _make_story()
-        step = story.steps[0]
-        prompt = compose_step_prompt(story, step, '', '', '')
-        assert '## Scratch Files' not in prompt
 
 
 # ===========================================================================

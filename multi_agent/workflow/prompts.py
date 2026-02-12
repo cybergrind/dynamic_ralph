@@ -211,7 +211,7 @@ def compose_step_prompt(
     global_scratch: str,
     story_scratch: str,
     base_instructions: str,
-    shared_dir: Path | None = None,
+    shared_dir: Path,
 ) -> str:
     """Build the full prompt for a step invocation.
 
@@ -261,19 +261,18 @@ def compose_step_prompt(
         parts.append(story_scratch.strip())
 
     # 6. Scratch file paths
-    if shared_dir:
-        parts.append('\n---\n\n## Scratch Files\n')
-        parts.append(
-            f'- **Story scratch:** `{shared_dir}/scratch_{story.story_id}.md`\n'
-            f'- **Global scratch:** `{shared_dir}/scratch.md`'
-        )
+    parts.append('\n---\n\n## Scratch Files\n')
+    parts.append(
+        f'- **Story scratch:** `{shared_dir}/scratch_{story.story_id}.md`\n'
+        f'- **Global scratch:** `{shared_dir}/scratch.md`'
+    )
 
     # 7. Workflow editing instructions (if step allows it)
     from multi_agent.workflow.steps import STEP_ALLOWS_EDITING
 
     if STEP_ALLOWS_EDITING.get(step.type, False):
         parts.append('\n---\n\n## Workflow Editing\n')
-        edits_prefix = f'{shared_dir}/' if shared_dir else ''
+        edits_prefix = f'{shared_dir}/'
         parts.append(
             f'To modify remaining steps, write a JSON file to '
             f'`{edits_prefix}workflow_edits/{story.story_id}.json`.\n'
