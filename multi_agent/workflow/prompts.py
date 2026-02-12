@@ -260,7 +260,15 @@ def compose_step_prompt(
         parts.append(f'\n---\n\n## Story Scratch ({story.story_id})\n')
         parts.append(story_scratch.strip())
 
-    # 6. Workflow editing instructions (if step allows it)
+    # 6. Scratch file paths
+    if shared_dir:
+        parts.append('\n---\n\n## Scratch Files\n')
+        parts.append(
+            f'- **Story scratch:** `{shared_dir}/scratch_{story.story_id}.md`\n'
+            f'- **Global scratch:** `{shared_dir}/scratch.md`'
+        )
+
+    # 7. Workflow editing instructions (if step allows it)
     from multi_agent.workflow.steps import STEP_ALLOWS_EDITING
 
     if STEP_ALLOWS_EDITING.get(step.type, False):

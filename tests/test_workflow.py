@@ -852,6 +852,23 @@ class TestPrompts:
         remaining = _format_remaining_steps(story, step)
         assert 'step-009' not in remaining
 
+    def test_compose_step_prompt_includes_scratch_file_paths(self):
+        from pathlib import Path
+
+        story = _make_story()
+        step = story.steps[0]  # context_gathering (non-editable step)
+        shared = Path('/run/shared')
+        prompt = compose_step_prompt(story, step, '', '', '', shared_dir=shared)
+        assert '## Scratch Files' in prompt
+        assert '/run/shared/scratch_US-001.md' in prompt
+        assert '/run/shared/scratch.md' in prompt
+
+    def test_compose_step_prompt_no_scratch_paths_without_shared_dir(self):
+        story = _make_story()
+        step = story.steps[0]
+        prompt = compose_step_prompt(story, step, '', '', '')
+        assert '## Scratch Files' not in prompt
+
 
 # ===========================================================================
 # filelock.py

@@ -29,6 +29,9 @@ Thumbs.db
 run_ralph/
 prd.json
 worktrees/
+scratch.md
+scratch_*.md
+workflow_edits/
 
 # Docker
 docker-compose.override.yml
