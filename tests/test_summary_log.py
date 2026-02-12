@@ -45,15 +45,15 @@ class TestAppendSummary:
 
 
 class TestPrintProgressSummary:
-    def test_with_run_dir(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        _print_progress('test message', run_dir=tmp_path)
+    def test_with_shared_dir(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        _print_progress('test message', shared_dir=tmp_path)
         log = tmp_path / 'summary.log'
         assert log.exists()
         content = log.read_text()
         assert 'test message' in content
         assert capsys.readouterr().out.strip() == 'test message'
 
-    def test_without_run_dir(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_without_shared_dir(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         _print_progress('no dir')
         assert not (tmp_path / 'summary.log').exists()
         assert capsys.readouterr().out.strip() == 'no dir'

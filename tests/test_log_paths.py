@@ -212,7 +212,6 @@ class TestRunDynamicRalphDiffPath:
             state_path=tmp_path / 'state.json',
             shared_dir=shared_dir,
             max_turns=10,
-            run_dir=tmp_path / 'run',
         )
 
         # Verify _save_diff_and_reset was called with a path under shared_dir
@@ -270,7 +269,6 @@ class TestRunDynamicRalphLogPath:
             state_path=tmp_path / 'state.json',
             shared_dir=shared_dir,
             max_turns=10,
-            run_dir=tmp_path / 'run',
         )
 
         # Verify _run_agent_docker was called with log_path
@@ -322,6 +320,7 @@ class TestRunAgentDockerLogging:
                 task='test task',
                 agent_id=1,
                 max_turns=10,
+                workspace=str(tmp_path),
                 log_path=log_path,
             )
 
@@ -365,6 +364,7 @@ class TestRunAgentDockerLogging:
                 task='test task',
                 agent_id=1,
                 max_turns=10,
+                workspace=str(tmp_path),
                 log_path=log_path,
             )
 
@@ -395,6 +395,7 @@ class TestRunAgentDockerLogging:
                 task='test task',
                 agent_id=1,
                 max_turns=10,
+                workspace=str(tmp_path),
                 log_path=None,
             )
 

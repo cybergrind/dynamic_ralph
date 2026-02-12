@@ -112,12 +112,12 @@ def append_summary(message: str, run_dir: Path) -> None:
         f.write(line)
 
 
-def _print_progress(message: str, run_dir: Path | None = None) -> None:
+def _print_progress(message: str, shared_dir: Path | None = None) -> None:
     """Print progress to stdout and log to stderr."""
     print(message, flush=True)
     logger.info(message)
-    if run_dir is not None:
-        append_summary(message, run_dir)
+    if shared_dir is not None:
+        append_summary(message, shared_dir)
 
 
 def _save_diff_and_reset(diff_path: Path, git_sha: str) -> None:
@@ -183,8 +183,7 @@ def _run_agent_docker(
     task: str,
     agent_id: int,
     max_turns: int | None,
-    workspace: str | None = None,
-    shared_dir: str | None = None,
+    workspace: str,
     log_path: Path | None = None,
 ) -> tuple[int, dict]:
     """Launch an agent in a Docker container and stream events.
@@ -199,9 +198,6 @@ def _run_agent_docker(
     Returns (returncode, result_info) where result_info contains cost/token data
     from the final 'result' event plus the last assistant text for summary extraction.
     """
-    if workspace is None:
-        workspace = os.getcwd()
-
     backend = get_backend()
 
     base_cmd = backend.build_command(
@@ -301,7 +297,6 @@ def execute_step(
     state_path: Path,
     shared_dir: Path,
     max_turns: int | None,
-    run_dir: Path | None = None,
 ) -> bool:
     """Execute a single workflow step by launching the agent.
 
@@ -361,7 +356,8 @@ def execute_step(
     effective_max_turns = max_turns
 
     _print_progress(
-        f'  [{story.story_id}] Step {step_id} ({step_obj.type}) starting (timeout={timeout_secs}s)', run_dir=run_dir
+        f'  [{story.story_id}] Step {step_id} ({step_obj.type}) starting (timeout={timeout_secs}s)',
+        shared_dir=shared_dir,
     )
 
     # Construct log path for this step
@@ -374,6 +370,7 @@ def execute_step(
         task=prompt,
         agent_id=agent_id,
         max_turns=effective_max_turns,
+        workspace=os.getcwd(),
         log_path=log_path,
     )
     elapsed = time.monotonic() - start_time
@@ -444,7 +441,7 @@ def execute_step(
 
     status_label = 'completed' if success else 'FAILED'
     _print_progress(
-        f'  [{story.story_id}] Step {step_id} ({step_obj.type}) {status_label} in {elapsed:.0f}s', run_dir=run_dir
+        f'  [{story.story_id}] Step {step_id} ({step_obj.type}) {status_label} in {elapsed:.0f}s', shared_dir=shared_dir
     )
 
     return success
@@ -461,7 +458,6 @@ def run_story_steps(
     state_path: Path,
     shared_dir: Path,
     max_turns: int | None = None,
-    run_dir: Path | None = None,
 ) -> bool:
     """Execute all steps for a single story in sequence.
 
@@ -479,7 +475,7 @@ def run_story_steps(
         step = story.find_next_pending_step()
         if step is None:
             # All steps done (completed or skipped) -- story is finished
-            _print_progress(f'  [{story_id}] All steps completed', run_dir=run_dir)
+            _print_progress(f'  [{story_id}] All steps completed', shared_dir=shared_dir)
             return True
 
         # Execute the step
@@ -490,7 +486,6 @@ def run_story_steps(
             state_path=state_path,
             shared_dir=shared_dir,
             max_turns=max_turns,
-            run_dir=run_dir,
         )
 
         if not success:
@@ -586,7 +581,7 @@ def _reevaluate_blocked_stories(state_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _print_status_summary(state_path: Path, run_dir: Path | None = None) -> None:
+def _print_status_summary(state_path: Path, shared_dir: Path | None = None) -> None:
     """Print a summary of all story statuses."""
     state = load_state(state_path)
     counts: dict[str, int] = {}
@@ -595,7 +590,7 @@ def _print_status_summary(state_path: Path, run_dir: Path | None = None) -> None
 
     parts = [f'{status}={count}' for status, count in sorted(counts.items())]
     total = len(state.stories)
-    _print_progress(f'  Status: {total} stories — {", ".join(parts)}', run_dir=run_dir)
+    _print_progress(f'  Status: {total} stories — {", ".join(parts)}', shared_dir=shared_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -603,9 +598,7 @@ def _print_status_summary(state_path: Path, run_dir: Path | None = None) -> None
 # ---------------------------------------------------------------------------
 
 
-def run_one_shot(
-    task: str, agent_id: int, max_turns: int | None, shared_dir: Path, state_path: Path, run_dir: Path | None = None
-) -> int:
+def run_one_shot(task: str, agent_id: int, max_turns: int | None, shared_dir: Path, state_path: Path) -> int:
     """Run a single task through the full step-based workflow.
 
     Uses the provided run directory for state. State persists after completion.
@@ -630,8 +623,8 @@ def run_one_shot(
     )
     save_state(state, state_path)
 
-    _print_progress(f'One-shot mode: executing task with {len(story.steps)} steps', run_dir=run_dir)
-    _print_progress(f'  State: {state_path}', run_dir=run_dir)
+    _print_progress(f'One-shot mode: executing task with {len(story.steps)} steps', shared_dir=shared_dir)
+    _print_progress(f'  State: {state_path}', shared_dir=shared_dir)
 
     success = run_story_steps(
         story_id='oneshot',
@@ -639,14 +632,13 @@ def run_one_shot(
         state_path=state_path,
         shared_dir=shared_dir,
         max_turns=max_turns,
-        run_dir=run_dir,
     )
 
     if success:
-        _print_progress('One-shot task completed successfully.', run_dir=run_dir)
+        _print_progress('One-shot task completed successfully.', shared_dir=shared_dir)
         return 0
     else:
-        _print_progress('One-shot task FAILED.', run_dir=run_dir)
+        _print_progress('One-shot task FAILED.', shared_dir=shared_dir)
         return 1
 
 
@@ -663,17 +655,16 @@ def run_serial(
     shared_dir: Path,
     resume: bool,
     max_turns: int | None,
-    run_dir: Path | None = None,
 ) -> None:
     """Run stories from a PRD file serially, one at a time."""
     # Initialize state from PRD if needed
     if state_path.exists() and resume:
-        _print_progress(f'Resuming from existing state: {state_path}', run_dir=run_dir)
+        _print_progress(f'Resuming from existing state: {state_path}', shared_dir=shared_dir)
     elif state_path.exists() and not resume:
-        _print_progress(f'Re-initializing state from PRD (overwriting {state_path})', run_dir=run_dir)
+        _print_progress(f'Re-initializing state from PRD (overwriting {state_path})', shared_dir=shared_dir)
         initialize_state_from_prd(prd_path, state_path)
     else:
-        _print_progress(f'Initializing state from PRD: {prd_path}', run_dir=run_dir)
+        _print_progress(f'Initializing state from PRD: {prd_path}', shared_dir=shared_dir)
         initialize_state_from_prd(prd_path, state_path)
 
     for iteration in range(1, max_iterations + 1):
@@ -689,13 +680,13 @@ def run_serial(
                     s for s in state.stories.values() if s.status in (StoryStatus.unclaimed, StoryStatus.in_progress)
                 ]
                 if not remaining:
-                    _print_progress(f'\nAll stories finished after {iteration - 1} iterations.', run_dir=run_dir)
+                    _print_progress(f'\nAll stories finished after {iteration - 1} iterations.', shared_dir=shared_dir)
                     break
                 else:
                     # Stories exist but none are assignable (blocked by deps)
                     _print_progress(
                         f'\nNo assignable stories. {len(remaining)} stories remain but are blocked by dependencies.',
-                        run_dir=run_dir,
+                        shared_dir=shared_dir,
                     )
                     break
 
@@ -713,7 +704,7 @@ def run_serial(
             story_title = story.title
 
         print(f'\n{"=" * 60}', flush=True)
-        _print_progress(f'Iteration {iteration}/{max_iterations}: [{story_id}] {story_title}', run_dir=run_dir)
+        _print_progress(f'Iteration {iteration}/{max_iterations}: [{story_id}] {story_title}', shared_dir=shared_dir)
         print(f'{"=" * 60}\n', flush=True)
 
         # Run all steps
@@ -723,7 +714,6 @@ def run_serial(
             state_path=state_path,
             shared_dir=shared_dir,
             max_turns=max_turns,
-            run_dir=run_dir,
         )
 
         if success:
@@ -734,15 +724,15 @@ def run_serial(
                 _add_history(sw, 'story_completed', agent_id)
 
             cleanup_story_scratch(story_id, shared_dir)
-            _print_progress(f'  Story {story_id} completed successfully.', run_dir=run_dir)
+            _print_progress(f'  Story {story_id} completed successfully.', shared_dir=shared_dir)
         else:
             # Story already marked failed in run_story_steps
             _block_dependents(state_path, story_id)
-            _print_progress(f'  Story {story_id} FAILED.', run_dir=run_dir)
+            _print_progress(f'  Story {story_id} FAILED.', shared_dir=shared_dir)
 
-        _print_status_summary(state_path, run_dir=run_dir)
+        _print_status_summary(state_path, shared_dir=shared_dir)
     else:
-        _print_progress(f'\nMax iterations ({max_iterations}) reached.', run_dir=run_dir)
+        _print_progress(f'\nMax iterations ({max_iterations}) reached.', shared_dir=shared_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -860,7 +850,6 @@ def run_parallel(
     shared_dir: Path,
     resume: bool,
     max_turns: int | None,
-    run_dir: Path | None = None,
 ) -> None:
     """Run stories from a PRD file in parallel with multiple agents.
 
@@ -869,12 +858,12 @@ def run_parallel(
     """
     # Initialize state
     if state_path.exists() and resume:
-        _print_progress(f'Resuming from existing state: {state_path}', run_dir=run_dir)
+        _print_progress(f'Resuming from existing state: {state_path}', shared_dir=shared_dir)
     elif state_path.exists() and not resume:
-        _print_progress(f'Re-initializing state from PRD (overwriting {state_path})', run_dir=run_dir)
+        _print_progress(f'Re-initializing state from PRD (overwriting {state_path})', shared_dir=shared_dir)
         initialize_state_from_prd(prd_path, state_path)
     else:
-        _print_progress(f'Initializing state from PRD: {prd_path}', run_dir=run_dir)
+        _print_progress(f'Initializing state from PRD: {prd_path}', shared_dir=shared_dir)
         initialize_state_from_prd(prd_path, state_path)
 
     # Track active agent subprocesses
@@ -883,7 +872,7 @@ def run_parallel(
     # Pool of available agent IDs
     available_agents: list[int] = list(range(1, num_agents + 1))
 
-    _print_progress(f'Parallel mode: {num_agents} agents', run_dir=run_dir)
+    _print_progress(f'Parallel mode: {num_agents} agents', shared_dir=shared_dir)
 
     iterations = 0
 
@@ -919,7 +908,7 @@ def run_parallel(
                 # Spawn agent outside the lock
                 _print_progress(
                     f'  Agent {assigned_aid}: starting story [{assigned_story_id}] {assigned_story_title}',
-                    run_dir=run_dir,
+                    shared_dir=shared_dir,
                 )
 
                 worktree_path = _create_worktree(assigned_aid, assigned_story_id)
@@ -956,11 +945,11 @@ def run_parallel(
                     s for s in state.stories.values() if s.status in (StoryStatus.unclaimed, StoryStatus.in_progress)
                 ]
                 if not remaining:
-                    _print_progress('\nAll stories finished (parallel mode).', run_dir=run_dir)
+                    _print_progress('\nAll stories finished (parallel mode).', shared_dir=shared_dir)
                 else:
                     _print_progress(
                         f'\nNo assignable stories. {len(remaining)} stories remain but are blocked or in progress.',
-                        run_dir=run_dir,
+                        shared_dir=shared_dir,
                     )
                 break
 
@@ -975,15 +964,19 @@ def run_parallel(
                         available_agents.sort()
 
                         if ret == 0:
-                            _print_progress(f'  Agent {aid}: story [{story_id}] completed', run_dir=run_dir)
+                            _print_progress(f'  Agent {aid}: story [{story_id}] completed', shared_dir=shared_dir)
 
                             # Merge worktree into main branch
                             if _merge_worktree(aid, story_id):
-                                _print_progress(f'  Agent {aid}: merged [{story_id}] into main branch', run_dir=run_dir)
+                                _print_progress(
+                                    f'  Agent {aid}: merged [{story_id}] into main branch', shared_dir=shared_dir
+                                )
                             else:
-                                _print_progress(f'  Agent {aid}: merge FAILED for [{story_id}]', run_dir=run_dir)
+                                _print_progress(f'  Agent {aid}: merge FAILED for [{story_id}]', shared_dir=shared_dir)
                         else:
-                            _print_progress(f'  Agent {aid}: story [{story_id}] FAILED (exit {ret})', run_dir=run_dir)
+                            _print_progress(
+                                f'  Agent {aid}: story [{story_id}] FAILED (exit {ret})', shared_dir=shared_dir
+                            )
                             _block_dependents(state_path, story_id)
 
                         # Cleanup worktree
@@ -998,7 +991,7 @@ def run_parallel(
                 # An agent finished, go back to the assignment loop
                 break
 
-            _print_status_summary(state_path, run_dir=run_dir)
+            _print_status_summary(state_path, shared_dir=shared_dir)
 
     finally:
         # Cleanup any remaining active agents
@@ -1012,7 +1005,7 @@ def run_parallel(
                 proc.wait()
             _remove_worktree(aid)
 
-    _print_status_summary(state_path, run_dir=run_dir)
+    _print_status_summary(state_path, shared_dir=shared_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -1026,7 +1019,6 @@ def run_single_story(
     state_path: Path,
     shared_dir: Path,
     max_turns: int | None,
-    run_dir: Path | None = None,
 ) -> None:
     """Execute a single story (entry point for subprocess in parallel mode).
 
@@ -1048,7 +1040,7 @@ def run_single_story(
                 story.steps = create_default_workflow()
             _add_history(story, 'story_claimed', agent_id)
 
-    _print_progress(f'Agent {agent_id}: running story [{story_id}]', run_dir=run_dir)
+    _print_progress(f'Agent {agent_id}: running story [{story_id}]', shared_dir=shared_dir)
 
     success = run_story_steps(
         story_id=story_id,
@@ -1056,7 +1048,6 @@ def run_single_story(
         state_path=state_path,
         shared_dir=shared_dir,
         max_turns=max_turns,
-        run_dir=run_dir,
     )
 
     if success:
@@ -1067,10 +1058,10 @@ def run_single_story(
             _add_history(sw, 'story_completed', agent_id)
 
         cleanup_story_scratch(story_id, shared_dir)
-        _print_progress(f'Agent {agent_id}: story [{story_id}] completed successfully.', run_dir=run_dir)
+        _print_progress(f'Agent {agent_id}: story [{story_id}] completed successfully.', shared_dir=shared_dir)
         sys.exit(0)
     else:
-        _print_progress(f'Agent {agent_id}: story [{story_id}] FAILED.', run_dir=run_dir)
+        _print_progress(f'Agent {agent_id}: story [{story_id}] FAILED.', shared_dir=shared_dir)
         sys.exit(1)
 
 
@@ -1164,14 +1155,12 @@ def main() -> None:
 
     # Auto-generate run directory when --shared-dir is not explicitly provided
     if args.shared_dir is None:
-        run_dir = generate_run_dir()
-        args.shared_dir = run_dir
+        args.shared_dir = generate_run_dir()
         if args.state_path is None:
-            args.state_path = run_dir / 'workflow_state.json'
-        _print_progress(f'Run directory: {run_dir}', run_dir=run_dir)
+            args.state_path = args.shared_dir / 'workflow_state.json'
+        _print_progress(f'Run directory: {args.shared_dir}', shared_dir=args.shared_dir)
     else:
-        # Explicit --shared-dir provided; use it as run_dir for summary.log
-        run_dir = args.shared_dir
+        # Explicit --shared-dir provided
         if args.state_path is None:
             args.state_path = args.shared_dir / 'workflow_state.json'
 
@@ -1184,7 +1173,6 @@ def main() -> None:
             state_path=args.state_path,
             shared_dir=args.shared_dir,
             max_turns=args.max_turns,
-            run_dir=run_dir,
         )
 
     elif args.task is not None and args.prd is None:
@@ -1195,7 +1183,6 @@ def main() -> None:
             max_turns=args.max_turns,
             shared_dir=args.shared_dir,
             state_path=args.state_path,
-            run_dir=run_dir,
         )
         sys.exit(rc)
 
@@ -1215,7 +1202,6 @@ def main() -> None:
                 shared_dir=args.shared_dir,
                 resume=args.resume,
                 max_turns=args.max_turns,
-                run_dir=run_dir,
             )
         else:
             # Serial mode
@@ -1227,7 +1213,6 @@ def main() -> None:
                 shared_dir=args.shared_dir,
                 resume=args.resume,
                 max_turns=args.max_turns,
-                run_dir=run_dir,
             )
 
     else:
