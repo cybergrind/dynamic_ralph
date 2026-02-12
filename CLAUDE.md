@@ -10,7 +10,8 @@ Always run commands with `uv run`.
 dynamic_ralph/
 ├── bin/
 │   ├── run_dynamic_ralph.py # Main orchestrator (entry point)
-│   └── run_agent.py         # Interactive agent runner in Docker
+│   ├── run_agent.py         # Interactive agent runner in Docker
+│   └── run_retrospective.py # Retrospective analysis runner
 ├── multi_agent/             # Core package
 │   ├── __init__.py          # Public re-exports
 │   ├── backend.py           # Agent backend abstraction
@@ -38,10 +39,16 @@ dynamic_ralph/
 │   ├── dynamic_ralph.md     # Dynamic Ralph design spec
 │   └── ralph.md             # Ralph pattern overview (historical)
 ├── tests/
-│   ├── test_workflow.py     # Workflow module tests
-│   ├── test_migration.py    # Migration validation tests
+│   ├── __init__.py          # Package marker
 │   ├── test_backend.py      # Backend abstraction tests
-│   └── test_run_agent.py    # Agent runner tests
+│   ├── test_git_identity.py # Git author identity tests
+│   ├── test_log_paths.py    # Log/diff path tests
+│   ├── test_migration.py    # Migration validation tests
+│   ├── test_retrospective.py # Retrospective runner tests
+│   ├── test_run_agent.py    # Agent runner tests
+│   ├── test_run_directory.py # Run directory generation tests
+│   ├── test_summary_log.py  # Summary log tests
+│   └── test_workflow.py     # Workflow module tests
 ├── docker/
 │   └── Dockerfile           # Agent container image
 └── pyproject.toml           # Project config (uv, ruff, pytest)

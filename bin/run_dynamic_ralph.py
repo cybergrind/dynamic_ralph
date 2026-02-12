@@ -191,6 +191,9 @@ def _run_agent_docker(
     Uses the configured backend (via ``get_backend()``) to build commands,
     parse events, and extract results.
 
+    *workspace* is the host directory mounted into the Docker container as the
+    agent's working directory.
+
     When *log_path* is provided, events are written as JSONL to that file and
     stderr is tee'd to a ``.stderr.log`` sibling file (while still being
     displayed on the terminal in real-time).
@@ -302,6 +305,10 @@ def execute_step(
 
     Manages step lifecycle: mark in_progress, compose prompt, launch agent,
     process edits, mark completed/failed.
+
+    *state_path* is the JSON file for persisted workflow state.  *shared_dir* is
+    the directory for logs, scratch files, and workflow edits.  *max_turns*
+    optionally limits the number of agent turns for this step.
 
     Returns True if the step completed successfully, False if it failed.
     """
@@ -601,7 +608,10 @@ def _print_status_summary(state_path: Path, shared_dir: Path | None = None) -> N
 def run_one_shot(task: str, agent_id: int, max_turns: int | None, shared_dir: Path, state_path: Path) -> int:
     """Run a single task through the full step-based workflow.
 
-    Uses the provided run directory for state. State persists after completion.
+    *shared_dir* is the directory used for logs, scratch files, and workflow
+    edit files.  *state_path* is the JSON file where workflow state is persisted
+    across steps.  State persists after completion.
+
     Returns 0 on success, 1 on failure.
     """
     # Create a single story with the default workflow
@@ -656,7 +666,13 @@ def run_serial(
     resume: bool,
     max_turns: int | None,
 ) -> None:
-    """Run stories from a PRD file serially, one at a time."""
+    """Run stories from a PRD file serially, one at a time.
+
+    *state_path* is the JSON file for persisted workflow state.  *shared_dir* is
+    the directory for logs, scratch files, and workflow edits.  When *resume* is
+    True, existing state is reused instead of reinitializing from the PRD.
+    *max_turns* optionally limits the number of agent turns per step.
+    """
     # Initialize state from PRD if needed
     if state_path.exists() and resume:
         _print_progress(f'Resuming from existing state: {state_path}', shared_dir=shared_dir)
@@ -854,7 +870,13 @@ def run_parallel(
     """Run stories from a PRD file in parallel with multiple agents.
 
     Each agent gets its own git worktree. Stories are assigned and executed
-    concurrently. Completed stories are rebased and squash-merged into the main branch.
+    concurrently. Completed stories are rebased and squash-merged into the main
+    branch.
+
+    *state_path* is the JSON file for persisted workflow state.  *shared_dir* is
+    the directory for logs, scratch files, and workflow edits.  When *resume* is
+    True, existing state is reused instead of reinitializing from the PRD.
+    *max_turns* optionally limits the number of agent turns per step.
     """
     # Initialize state
     if state_path.exists() and resume:

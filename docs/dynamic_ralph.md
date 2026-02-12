@@ -46,15 +46,15 @@ A single unit of work within a story. Each step has a type, a description, and d
 
 ### Workflow
 
-The ordered list of steps for a story. The orchestrator generates a default workflow based on story type, but agents can modify remaining steps at runtime (see Step Editing).
+The ordered list of steps for a story. The orchestrator generates a default workflow based on story type, but agents can modify remaining steps at runtime (see Workflow Editing).
 
 ### Workflow State File
 
 A JSON file (`workflow_state.json`) that tracks the status of all stories and their steps. Protected by `FileLock` for concurrent access by multiple agents. The orchestrator reads this file to determine what to run next; agents write to it to report step completion or modify remaining steps.
 
-### Run Directory
+### Shared Directory
 
-Every invocation of the orchestrator creates a **run directory** under `run_ralph/` in the target repository root:
+Every invocation of the orchestrator creates a **shared directory** under `run_ralph/` in the target repository root:
 
 ```
 target-repo/
@@ -76,14 +76,14 @@ target-repo/
 └── (source code)
 ```
 
-The run directory is the `shared_dir` — the single location where all run-scoped artifacts live. Agents run in the repo root (or their worktree for parallel mode) but receive the run directory path to read/write state, scratch files, edit requests, and logs.
+The shared directory is the `shared_dir` — the single location where all run-scoped artifacts live. Agents run in the repo root (or their worktree for parallel mode) but receive the shared directory path to read/write state, scratch files, edit requests, and logs.
 
 This design supports:
-- **Multiple simultaneous invocations** — each gets its own run directory, no collisions
+- **Multiple simultaneous invocations** — each gets its own shared directory, no collisions
 - **Post-run inspection** — state and logs persist for debugging (not cleaned up like `/tmp`)
 - **Distributable tool** — `uvx --from=dynamic-ralph run-dynamic-ralph` creates `run_ralph/` in whatever repo it's invoked in
 
-One-shot mode uses the same mechanism — it creates a run directory just like PRD mode. One-shot is simply a run with an ephemeral single-story PRD.
+One-shot mode uses the same mechanism — it creates a shared directory just like PRD mode. One-shot is simply a run with an ephemeral single-story PRD.
 
 `worktrees/` stays at the repo root because git worktrees must be siblings of the main working tree, not nested inside it.
 
@@ -91,15 +91,15 @@ One-shot mode uses the same mechanism — it creates a run directory just like P
 
 Two types of scratch files provide persistent memory across steps:
 
-- **`scratch.md`** (global) — Shared across all stories and all agents within a single run. Lives in the run directory. Protected by `FileLock` for concurrent access. Contains cross-story findings and conventions (e.g., "All datetime columns use `func.now()` server default"). Agents should only write truly global observations here.
+- **`scratch.md`** (global scratch) — Shared across all stories and all agents within a single run. Lives in the shared directory. Protected by `FileLock` for concurrent access. Contains cross-story findings and conventions (e.g., "All datetime columns use `func.now()` server default"). Agents should only write truly global observations here.
 
-- **`scratch_<story_id>.md`** (per-story) — Scoped to a single story (e.g., `scratch_US-001.md`). Lives in the run directory. No locking needed because steps within a story execute sequentially. Contains story-specific context: findings, decisions, plans, and lessons learned. Deleted or archived when the story completes.
+- **`scratch_<story_id>.md`** (story scratch) — Scoped to a single story (e.g., `scratch_US-001.md`). Lives in the shared directory. No locking needed because steps within a story execute sequentially. Contains story-specific context: findings, decisions, plans, and lessons learned. Deleted or archived when the story completes.
 
 Each agent receives the contents of both files in its prompt: the global scratch file plus its own story's scratch file. This keeps prompt size bounded — the global file stays small (only cross-cutting findings), and story files don't accumulate across stories.
 
 The scratch files supplement the primary inter-step context mechanism — step `notes` from completed steps are passed directly to subsequent steps (see Step Execution Protocol). Agents use scratch files for detailed context that doesn't fit in a short summary, and for information that future steps or other stories may need.
 
-### Step Editing
+### Workflow Editing
 
 Agents can modify the remaining (not yet started) steps in their story's workflow. This is how agents adapt to unexpected findings — if a step reveals that the implementation needs an extra migration, the agent can insert a migration step. If a step fails because the approach was wrong, the agent can edit the step's description and restart it. The orchestrator enforces that only pending steps can be modified; completed and in-progress steps are immutable.
 
@@ -402,7 +402,7 @@ The orchestrator re-evaluates `blocked` stories on every loop iteration. If a pr
 
 ## Workflow State File Schema
 
-The shared state lives in `workflow_state.json` inside the run directory (`run_ralph/<timestamp>_<id>/`). All access is protected by `FileLock`.
+The shared state lives in `workflow_state.json` inside the shared directory (`run_ralph/<timestamp>_<id>/`). All access is protected by `FileLock`.
 
 ### Top-Level Schema
 
@@ -510,7 +510,7 @@ The shared state lives in `workflow_state.json` inside the run directory (`run_r
 
 **History action types:** `step_started`, `step_completed`, `step_failed`, `step_cancelled`, `step_skipped`, `workflow_edit`, `story_claimed`, `story_completed`, `story_failed`
 
-## Step Editing Protocol
+## Workflow Editing Protocol
 
 Agents can request workflow edits during execution. Not all steps allow editing — some are fixed.
 
@@ -727,14 +727,14 @@ Each agent needs its own copy of the codebase to avoid git conflicts and uncommi
 - Source code — each agent works on its own branch in its own directory
 - Git state — commits, staging area, uncommitted changes are independent
 
-**Shared across all agents (in the run directory):**
+**Shared across all agents (in the shared directory):**
 - `workflow_state.json` — story/step state (accessed via `FileLock`)
 - `scratch.md` — global shared context (accessed via `FileLock`)
-- `scratch_<story_id>.md` — per-story context files (single writer, no lock needed)
+- `scratch_<story_id>.md` — story scratch files (single writer, no lock needed)
 - `workflow_edits/` — edit request files from agents
 - `logs/` — per-step agent output logs
 
-**At the repo root (not in the run directory):**
+**At the repo root (not in the shared directory):**
 - `worktrees/` — git worktrees for parallel agents
 
 The orchestrator sets up worktrees when assigning stories:
@@ -746,7 +746,7 @@ git worktree add worktrees/agent-1 -b ralph/US-001 master
 
 Note the explicit `master` base — all worktrees branch from the main branch.
 
-Agents access shared files via the `RALPH_SHARED_DIR` environment variable, which points to the run directory (e.g., `run_ralph/20250211T103000_a1b2c3/`).
+Agents access shared files via the `RALPH_SHARED_DIR` environment variable, which points to the shared directory (e.g., `run_ralph/20250211T103000_a1b2c3/`).
 
 ### Merge Strategy
 
@@ -843,11 +843,11 @@ An agent can also be launched without a PRD or story — just a free-form reques
 uv run python bin/run_dynamic_ralph.py "Fix the N+1 query in profiles list endpoint"
 ```
 
-One-shot mode uses the same run directory mechanism as PRD mode — it creates `run_ralph/<timestamp>_<id>/` with `workflow_state.json`, `scratch.md`, and `scratch_oneshot.md`. The request text becomes the story description for a single-story workflow. The run directory persists after completion for inspection and debugging.
+One-shot mode uses the same shared directory mechanism as PRD mode — it creates `run_ralph/<timestamp>_<id>/` with `workflow_state.json`, `scratch.md`, and `scratch_oneshot.md`. The request text becomes the story description for a single-story workflow. The shared directory persists after completion for inspection and debugging.
 
 This means:
-- **The agent code is the same** in one-shot and PRD modes — the orchestrator constructs the workflow state and passes the run directory path and story ID in both cases
-- **Step editing and restart work** — the state file in the run directory backs them
+- **The agent code is the same** in one-shot and PRD modes — the orchestrator constructs the workflow state and passes the shared directory path and story ID in both cases
+- **Workflow editing and restart work** — the state file in the shared directory backs them
 - **One-shot is just a PRD run with an ephemeral single-story PRD** — no special-case temp directory logic
 
 One-shot mode is useful for quick one-off tasks that don't warrant a full PRD, and for testing the agent workflow during development.
@@ -874,7 +874,7 @@ The `review` and `final_review` steps are self-review — the same agent (model)
 
 The system should be built bottom-up:
 
-1. **Single agent, one-shot mode** — implement the step execution loop, step editing, restart, scratch files, per-step timeouts. Test with `bin/run_dynamic_ralph.py "some task"`. This is the foundation — get it working and polished before moving on.
+1. **Single agent, one-shot mode** — implement the step execution loop, workflow editing, restart, scratch files, per-step timeouts. Test with `bin/run_dynamic_ralph.py "some task"`. This is the foundation — get it working and polished before moving on.
 
 2. **PRD mode, single agent:**
    - **2a. Persistent state + step orchestrator** — add `workflow_state.json` persistence, step-level orchestration for a single story. Test full workflow lifecycle.
@@ -1162,7 +1162,7 @@ Two stories: one completed, one in progress with a workflow edit.
 
 Note: The US-001 example is abbreviated (showing only key steps) for readability. A real workflow would include all 10 default steps.
 
-### Step Editing Examples
+### Workflow Editing Examples
 
 **`add_after`** -- insert steps after a completed step:
 
