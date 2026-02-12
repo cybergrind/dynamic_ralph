@@ -13,6 +13,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -270,6 +271,8 @@ def execute_step(
     agent_id: int,
     state_path: Path,
     shared_dir: Path,
+    max_turns: int | None = None,
+    on_progress: 'Callable[[str, Path | None], None] | None' = None,
 ) -> Step:
     """Execute a single workflow step end-to-end.
 
@@ -279,6 +282,10 @@ def execute_step(
     4. On success: process workflow edits, mark ``completed``.
     5. On failure: discard edits, save diff, reset git, mark ``failed``.
     6. On timeout: mark ``cancelled``.
+
+    *max_turns* optionally limits the number of agent turns for this step.
+    *on_progress* is an optional callback invoked with ``(message, shared_dir)``
+    at step start and completion for progress reporting (e.g. summary.log).
 
     Returns the updated :class:`Step`.
     """
@@ -330,7 +337,6 @@ def execute_step(
     log_path = log_dir / f'{step_id}.jsonl'
 
     timeout = STEP_TIMEOUTS.get(step.type, 900)
-    max_turns: int | None = None  # let the agent run freely within the timeout
 
     logger.info(
         'Launching agent for %s / %s (timeout=%ds)',
@@ -339,6 +345,13 @@ def execute_step(
         timeout,
     )
 
+    if on_progress is not None:
+        on_progress(
+            f'  [{story_id}] Step {step_id} ({step.type}) starting (timeout={timeout}s)',
+            shared_dir,
+        )
+
+    start_time = time.monotonic()
     agent_result = _launch_agent(
         prompt=prompt,
         agent_id=agent_id,
@@ -346,6 +359,7 @@ def execute_step(
         log_path=log_path,
         timeout=timeout,
     )
+    elapsed_secs = round(time.monotonic() - start_time, 1)
 
     # ---- (f) Log path on step -------------------------------------------------
     step.log_file = str(log_path)
@@ -379,12 +393,23 @@ def execute_step(
                 action='step_cancelled',
                 agent_id=agent_id,
                 step_id=step_id,
-                details={'reason': 'timeout', 'timeout_seconds': timeout},
+                details={
+                    'reason': 'timeout',
+                    'timeout_seconds': timeout,
+                    'elapsed_secs': elapsed_secs,
+                },
             )
         )
 
         _persist_step(story, step, state_path)
         logger.warning('Step %s/%s timed out after %ds', story_id, step_id, timeout)
+
+        if on_progress is not None:
+            on_progress(
+                f'  [{story_id}] Step {step_id} ({step.type}) TIMED OUT in {elapsed_secs}s',
+                shared_dir,
+            )
+
         return step
 
     # ---- (j) Failure handling -------------------------------------------------
@@ -413,6 +438,7 @@ def execute_step(
                     'exit_code': agent_result.exit_code,
                     'completion_status': agent_result.completion_status,
                     'cost_usd': agent_result.cost_usd,
+                    'elapsed_secs': elapsed_secs,
                 },
             )
         )
@@ -424,12 +450,29 @@ def execute_step(
             step_id,
             agent_result.exit_code,
         )
+
+        if on_progress is not None:
+            on_progress(
+                f'  [{story_id}] Step {step_id} ({step.type}) FAILED in {elapsed_secs}s',
+                shared_dir,
+            )
+
         return step
 
     # ---- (i) Success handling -------------------------------------------------
 
     # Process workflow edits BEFORE marking complete
     _process_workflow_edits(story, step, agent_id, shared_dir)
+
+    # If edits replaced/removed this step, return early without marking completed
+    if story.find_step(step_id) is None:
+        logger.info(
+            'Step %s/%s was replaced by workflow edits, skipping completion',
+            story_id,
+            step_id,
+        )
+        _persist_step(story, step, state_path)
+        return step
 
     step.status = StepStatus.completed
     step.completed_at = _now_iso()
@@ -445,6 +488,7 @@ def execute_step(
                 'num_turns': agent_result.num_turns,
                 'input_tokens': agent_result.input_tokens,
                 'output_tokens': agent_result.output_tokens,
+                'elapsed_secs': elapsed_secs,
             },
         )
     )
@@ -457,6 +501,13 @@ def execute_step(
         agent_result.cost_usd,
         agent_result.num_turns,
     )
+
+    if on_progress is not None:
+        on_progress(
+            f'  [{story_id}] Step {step_id} ({step.type}) completed in {elapsed_secs}s',
+            shared_dir,
+        )
+
     return step
 
 

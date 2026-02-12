@@ -21,6 +21,7 @@ from pathlib import Path
 from multi_agent import BASE_AGENT_INSTRUCTIONS, build_image, image_exists
 from multi_agent.backend import AgentResult, get_backend
 from multi_agent.stream import display_agent_event
+from multi_agent.workflow.executor import _tee_stderr
 from multi_agent.workflow.models import StepStatus, StoryStatus, WorkflowState
 
 
@@ -205,20 +206,6 @@ Write {retro_path} containing:
 CRITICAL: DO NOT delete workflow_state.json, workflow_state.json.lock, prd.json,
 scratch.md, or scratch_*.md — these are actively used by the running orchestrator.
 """
-
-
-# ---------------------------------------------------------------------------
-# Stderr tee helper
-# ---------------------------------------------------------------------------
-
-
-def _tee_stderr(pipe, log_file, terminal):
-    """Read lines from *pipe* and write each to both *log_file* and *terminal*."""
-    for line in pipe:
-        terminal.write(line)
-        terminal.flush()
-        log_file.write(line)
-        log_file.flush()
 
 
 # ---------------------------------------------------------------------------

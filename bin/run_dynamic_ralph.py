@@ -8,34 +8,20 @@ Supports three modes:
 """
 
 import argparse
-import json
 import logging
-import os
 import shutil
 import subprocess
 import sys
-import threading
 import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
 from multi_agent import (
-    BASE_AGENT_INSTRUCTIONS,
     build_image,
     image_exists,
 )
-from multi_agent.backend import get_backend
-from multi_agent.stream import display_agent_event
-from multi_agent.workflow.editing import (
-    EditValidationError,
-    apply_edits,
-    discard_edit_file,
-    parse_edit_file,
-    remove_edit_file,
-    validate_edits,
-)
-from multi_agent.workflow.executor import _tee_stderr
+from multi_agent.workflow.executor import _now_iso, execute_step
 from multi_agent.workflow.models import (
     HistoryEntry,
     StepStatus,
@@ -43,12 +29,9 @@ from multi_agent.workflow.models import (
     StoryWorkflow,
     WorkflowState,
 )
-from multi_agent.workflow.prompts import compose_step_prompt
 from multi_agent.workflow.scratch import (
     append_global_scratch,
     cleanup_story_scratch,
-    read_global_scratch,
-    read_story_scratch,
 )
 from multi_agent.workflow.state import (
     find_assignable_story,
@@ -57,7 +40,7 @@ from multi_agent.workflow.state import (
     locked_state,
     save_state,
 )
-from multi_agent.workflow.steps import STEP_TIMEOUTS, create_default_workflow
+from multi_agent.workflow.steps import create_default_workflow
 
 
 logger = logging.getLogger(__name__)
@@ -82,10 +65,6 @@ def _git_main_branch() -> str:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
 
 
 def _add_history(
@@ -120,50 +99,6 @@ def _print_progress(message: str, shared_dir: Path | None = None) -> None:
         append_summary(message, shared_dir)
 
 
-def _save_diff_and_reset(diff_path: Path, git_sha: str) -> None:
-    """Save the current diff since *git_sha* to *diff_path*, then hard-reset.
-
-    Per spec: on failure, capture all changes (committed + uncommitted) as a
-    diff for debugging, then restore the worktree to the pre-step state.
-    """
-    diff_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        result = subprocess.run(
-            ['git', 'diff', git_sha],
-            capture_output=True,
-            text=True,
-        )
-        diff_path.write_text(result.stdout)
-    except Exception:
-        logger.exception('Failed to save diff to %s', diff_path)
-
-    try:
-        subprocess.run(['git', 'reset', '--hard', git_sha], check=True)
-        subprocess.run(['git', 'clean', '-fd'], check=True)
-    except Exception:
-        logger.exception('Failed to reset git to %s', git_sha)
-
-
-def _extract_summary(text: str) -> str | None:
-    """Extract the SUMMARY section from agent output.
-
-    Looks for a line starting with "SUMMARY" (case-insensitive, ignoring
-    leading ``#`` markers) and returns everything after it.
-    """
-    lines = text.splitlines()
-    for idx, line in enumerate(lines):
-        stripped = line.strip()
-        normalized = stripped.lstrip('#').strip()
-        if normalized.upper().startswith('SUMMARY'):
-            remaining = lines[idx + 1 :]
-            summary = '\n'.join(remaining).strip()
-            if summary:
-                return summary
-            after_keyword = normalized[len('SUMMARY') :].lstrip(':').strip()
-            return after_keyword if after_keyword else None
-    return None
-
-
 def generate_run_dir() -> Path:
     """Create a unique run directory under ``run_ralph/``.
 
@@ -177,281 +112,6 @@ def generate_run_dir() -> Path:
     (run_dir / 'workflow_edits').mkdir(exist_ok=True)
     (run_dir / 'logs').mkdir(exist_ok=True)
     return run_dir
-
-
-def _run_agent_docker(
-    task: str,
-    agent_id: int,
-    max_turns: int | None,
-    workspace: str,
-    log_path: Path | None = None,
-) -> tuple[int, dict]:
-    """Launch an agent in a Docker container and stream events.
-
-    Uses the configured backend (via ``get_backend()``) to build commands,
-    parse events, and extract results.
-
-    *workspace* is the host directory mounted into the Docker container as the
-    agent's working directory.
-
-    When *log_path* is provided, events are written as JSONL to that file and
-    stderr is tee'd to a ``.stderr.log`` sibling file (while still being
-    displayed on the terminal in real-time).
-
-    Returns (returncode, result_info) where result_info contains cost/token data
-    from the final 'result' event plus the last assistant text for summary extraction.
-    """
-    backend = get_backend()
-
-    base_cmd = backend.build_command(
-        task,
-        system_prompt=BASE_AGENT_INSTRUCTIONS,
-        max_turns=max_turns,
-    )
-
-    docker_cmd = backend.build_docker_command(
-        base_cmd,
-        agent_id=agent_id,
-        workspace=workspace,
-    )
-
-    # When log_path is set, capture stderr via PIPE so we can tee it.
-    # Otherwise, pass stderr straight through to the terminal.
-    capture_stderr = log_path is not None
-    stderr_arg = subprocess.PIPE if capture_stderr else sys.stderr
-
-    if log_path is not None:
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-
-    process = subprocess.Popen(
-        docker_cmd,
-        stdout=subprocess.PIPE,
-        stderr=stderr_arg,
-        text=True,
-        bufsize=1,
-    )
-
-    # Set up stderr tee thread when logging
-    stderr_log_file = None
-    stderr_thread = None
-    if capture_stderr:
-        stderr_log_path = log_path.with_suffix('.stderr.log')
-        stderr_log_file = open(stderr_log_path, 'w')
-        stderr_thread = threading.Thread(
-            target=_tee_stderr,
-            args=(process.stderr, stderr_log_file, sys.stderr),
-            daemon=True,
-        )
-        stderr_thread.start()
-
-    jsonl_file = None
-    if log_path is not None:
-        jsonl_file = open(log_path, 'w')
-
-    try:
-
-        def _line_iter():
-            for line in process.stdout:  # type: ignore[union-attr]
-                yield line
-
-        all_events = []
-        for event in backend.parse_events(_line_iter()):
-            all_events.append(event)
-            display_agent_event(event)
-
-            # Write JSONL log
-            if jsonl_file is not None:
-                if event.raw:
-                    jsonl_file.write(json.dumps(event.raw) + '\n')
-                else:
-                    jsonl_file.write(f'# {event.text}\n')
-                jsonl_file.flush()
-
-        process.wait()
-    finally:
-        if stderr_thread is not None:
-            stderr_thread.join(timeout=5)
-        if jsonl_file is not None:
-            jsonl_file.close()
-        if stderr_log_file is not None:
-            stderr_log_file.close()
-
-    agent_result = backend.extract_result(all_events, process.returncode or 0)
-
-    result_info: dict = {
-        'cost_usd': agent_result.cost_usd,
-        'num_turns': agent_result.num_turns,
-        'input_tokens': agent_result.input_tokens,
-        'output_tokens': agent_result.output_tokens,
-        'last_assistant_text': agent_result.final_response,
-    }
-    return process.returncode, result_info
-
-
-# ---------------------------------------------------------------------------
-# Step execution
-# ---------------------------------------------------------------------------
-
-
-def execute_step(
-    story: StoryWorkflow,
-    step_id: str,
-    agent_id: int,
-    state_path: Path,
-    shared_dir: Path,
-    max_turns: int | None,
-) -> bool:
-    """Execute a single workflow step by launching the agent.
-
-    Manages step lifecycle: mark in_progress, compose prompt, launch agent,
-    process edits, mark completed/failed.
-
-    *state_path* is the JSON file for persisted workflow state.  *shared_dir* is
-    the directory for logs, scratch files, and workflow edits.  *max_turns*
-    optionally limits the number of agent turns for this step.
-
-    Returns True if the step completed successfully, False if it failed.
-    """
-    # Load current state and find the step
-    with locked_state(state_path) as state:
-        sw = state.stories.get(story.story_id)
-        if sw is None:
-            logger.error('Story %s not found in state', story.story_id)
-            return False
-        step = sw.find_step(step_id)
-        if step is None:
-            logger.error('Step %s not found in story %s', step_id, story.story_id)
-            return False
-
-        # Mark step as in_progress
-        step.status = StepStatus.in_progress
-        step.started_at = _now_iso()
-
-        # Capture git SHA
-        try:
-            result = subprocess.run(
-                ['git', 'rev-parse', 'HEAD'],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            step.git_sha_at_start = result.stdout.strip()
-        except subprocess.CalledProcessError:
-            step.git_sha_at_start = None
-
-        _add_history(sw, 'step_started', agent_id, step.id)
-
-    # Compose the prompt (outside the lock)
-    global_scratch = read_global_scratch(shared_dir)
-    story_scratch = read_story_scratch(story.story_id, shared_dir)
-
-    step_obj = story.find_step(step_id)
-    if step_obj is None:
-        return False
-
-    prompt = compose_step_prompt(
-        story=story,
-        step=step_obj,
-        global_scratch=global_scratch,
-        story_scratch=story_scratch,
-        base_instructions=BASE_AGENT_INSTRUCTIONS,
-        shared_dir=shared_dir,
-    )
-
-    # Determine timeout for this step type
-    timeout_secs = STEP_TIMEOUTS.get(step_obj.type, 900)
-    effective_max_turns = max_turns
-
-    _print_progress(
-        f'  [{story.story_id}] Step {step_id} ({step_obj.type}) starting (timeout={timeout_secs}s)',
-        shared_dir=shared_dir,
-    )
-
-    # Construct log path for this step
-    log_dir = shared_dir / 'logs' / story.story_id
-    log_path = log_dir / f'{step_id}.jsonl'
-
-    # Launch the agent
-    start_time = time.monotonic()
-    returncode, result_info = _run_agent_docker(
-        task=prompt,
-        agent_id=agent_id,
-        max_turns=effective_max_turns,
-        workspace=os.getcwd(),
-        log_path=log_path,
-    )
-    elapsed = time.monotonic() - start_time
-
-    # Process any workflow edit requests
-    edits_applied = False
-    try:
-        edits = parse_edit_file(story.story_id, shared_dir)
-        if edits is not None:
-            # Reload state for edit application
-            with locked_state(state_path) as state:
-                sw = state.stories[story.story_id]
-                try:
-                    validate_edits(sw, edits)
-                    apply_edits(sw, edits)
-                    remove_edit_file(story.story_id, shared_dir)
-                    edits_applied = True
-                    _add_history(sw, 'workflow_edit', agent_id, step_id, edits_count=len(edits))
-                    logger.info(
-                        'Applied %d workflow edits for story %s',
-                        len(edits),
-                        story.story_id,
-                    )
-                except EditValidationError as exc:
-                    logger.warning(
-                        'Workflow edits failed validation for story %s: %s',
-                        story.story_id,
-                        exc,
-                    )
-                    discard_edit_file(story.story_id, shared_dir)
-    except Exception:
-        logger.exception('Error processing workflow edits for story %s', story.story_id)
-        discard_edit_file(story.story_id, shared_dir)
-
-    # Extract summary from agent output for inter-step context
-    last_text = result_info.get('last_assistant_text', '')
-    summary = _extract_summary(last_text) if last_text else None
-
-    # Update step status in state
-    success = returncode == 0
-    with locked_state(state_path) as state:
-        sw = state.stories[story.story_id]
-        step = sw.find_step(step_id)
-        if step is None:
-            # Step may have been replaced by edits (e.g., split). If edits were
-            # applied, treat the original step as handled.
-            if edits_applied:
-                return True
-            return False
-
-        step.completed_at = _now_iso()
-        step.cost_usd = result_info.get('cost_usd')
-        step.input_tokens = result_info.get('input_tokens')
-        step.output_tokens = result_info.get('output_tokens')
-        step.notes = summary
-
-        if success:
-            step.status = StepStatus.completed
-            _add_history(sw, 'step_completed', agent_id, step.id, elapsed_secs=round(elapsed, 1))
-        else:
-            step.status = StepStatus.failed
-            step.error = f'Agent exited with code {returncode}'
-            _add_history(sw, 'step_failed', agent_id, step.id, returncode=returncode, elapsed_secs=round(elapsed, 1))
-            # Save diff and reset git on failure (per spec)
-            if step.git_sha_at_start:
-                diff_path = shared_dir / 'logs' / story.story_id / f'{step_id}.diff'
-                _save_diff_and_reset(diff_path, step.git_sha_at_start)
-
-    status_label = 'completed' if success else 'FAILED'
-    _print_progress(
-        f'  [{story.story_id}] Step {step_id} ({step_obj.type}) {status_label} in {elapsed:.0f}s', shared_dir=shared_dir
-    )
-
-    return success
 
 
 # ---------------------------------------------------------------------------
@@ -485,40 +145,57 @@ def run_story_steps(
             _print_progress(f'  [{story_id}] All steps completed', shared_dir=shared_dir)
             return True
 
-        # Execute the step
-        success = execute_step(
+        # Execute the step via the unified executor
+        result_step = execute_step(
             story=story,
-            step_id=step.id,
+            step=step,
             agent_id=agent_id,
             state_path=state_path,
             shared_dir=shared_dir,
             max_turns=max_turns,
+            on_progress=_print_progress,
         )
 
-        if not success:
-            # Check if step was replaced by edits
-            refreshed = load_state(state_path)
-            refreshed_story = refreshed.stories.get(story_id)
-            if refreshed_story:
-                refreshed_step = refreshed_story.find_step(step.id)
-                if refreshed_step is None:
-                    # Step was replaced by edits, continue to next iteration
-                    continue
-                if refreshed_step.status == StepStatus.failed:
-                    # Genuine failure -- mark story as failed
-                    with locked_state(state_path) as s:
-                        sw = s.stories[story_id]
-                        sw.status = StoryStatus.failed
-                        sw.completed_at = _now_iso()
-                        _add_history(sw, 'story_failed', agent_id, step.id)
+        if result_step.status == StepStatus.completed:
+            continue
 
-                    append_global_scratch(
-                        f'[{_now_iso()}] Story {story_id} FAILED at step {step.id} ({step.type})',
-                        shared_dir,
-                    )
-                    return False
-            else:
+        if result_step.status == StepStatus.cancelled:
+            # Timeout — treat as failure for the story
+            with locked_state(state_path) as s:
+                sw = s.stories[story_id]
+                sw.status = StoryStatus.failed
+                sw.completed_at = _now_iso()
+                _add_history(sw, 'story_failed', agent_id, step.id)
+
+            append_global_scratch(
+                f'[{_now_iso()}] Story {story_id} FAILED at step {step.id} ({step.type}) — timed out',
+                shared_dir,
+            )
+            return False
+
+        # Check if step was replaced by edits
+        refreshed = load_state(state_path)
+        refreshed_story = refreshed.stories.get(story_id)
+        if refreshed_story:
+            refreshed_step = refreshed_story.find_step(step.id)
+            if refreshed_step is None:
+                # Step was replaced by edits, continue to next iteration
+                continue
+            if refreshed_step.status == StepStatus.failed:
+                # Genuine failure -- mark story as failed
+                with locked_state(state_path) as s:
+                    sw = s.stories[story_id]
+                    sw.status = StoryStatus.failed
+                    sw.completed_at = _now_iso()
+                    _add_history(sw, 'story_failed', agent_id, step.id)
+
+                append_global_scratch(
+                    f'[{_now_iso()}] Story {story_id} FAILED at step {step.id} ({step.type})',
+                    shared_dir,
+                )
                 return False
+        else:
+            return False
 
     # unreachable, but satisfies type checker
     return False  # pragma: no cover
