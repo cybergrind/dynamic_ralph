@@ -584,6 +584,7 @@ class TestEditApplication:
         story = _make_story()
         story.steps[4].status = StepStatus.in_progress
         story.steps[4].started_at = '2025-01-01T00:00:00Z'
+        story.steps[4].log_file = '/tmp/old_log.txt'
         ops = [
             RestartEdit(
                 target_step_id='step-005',
@@ -599,6 +600,7 @@ class TestEditApplication:
         assert step.description == 'Try different approach'
         assert step.restart_count == 1
         assert step.started_at is None
+        assert step.log_file is None
 
 
 class TestEditFileParsing:

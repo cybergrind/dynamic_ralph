@@ -286,3 +286,4 @@ def _apply_restart(story: StoryWorkflow, op: RestartEdit) -> None:
         step.cost_usd = None
         step.input_tokens = None
         step.output_tokens = None
+        step.log_file = None
