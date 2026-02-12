@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Annotated
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class UserStory(BaseModel):
@@ -16,6 +16,7 @@ class UserStory(BaseModel):
     priority: Annotated[int, 'positive, matches array index + 1']
     passes: bool
     notes: str
+    depends_on: list[str] = Field(default_factory=list)
 
     @field_validator('id')
     @classmethod
@@ -85,6 +86,8 @@ class FlatStory(BaseModel):
     title: str | None = None
     description: str | None = None
     passes: bool | None = None
+    acceptanceCriteria: list[str] = Field(default_factory=list)
+    depends_on: list[str] = Field(default_factory=list)
 
 
 def parse_prd(data: object) -> Prd | list[FlatStory]:

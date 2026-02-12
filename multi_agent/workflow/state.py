@@ -8,9 +8,9 @@ from collections import defaultdict, deque
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 from multi_agent.filelock import FileLock
+from multi_agent.models import FlatStory, Prd, UserStory, parse_prd
 from multi_agent.workflow.models import StoryStatus, StoryWorkflow, WorkflowState
 
 
@@ -66,44 +66,35 @@ def initialize_state_from_prd(
 ) -> WorkflowState:
     """Read a prd.json file and create a WorkflowState with one StoryWorkflow per story.
 
-    Supports two PRD formats:
-    - Flat array: ``[{"id": "...", "title": "...", ...}, ...]``
-    - Rich format: ``{"stories": [...], ...}``
+    Supports two PRD formats, both validated via Pydantic:
+    - Flat array: ``[{"id": "...", "title": "...", ...}, ...]`` (FlatStory, lenient)
+    - Rich format: ``{"userStories": [...], ...}`` (Prd model, strict)
 
     Stories start with status=unclaimed, empty steps (populated when claimed),
     and empty history. If PRD stories have a ``depends_on`` field, it is preserved.
     """
     raw = json.loads(prd_path.read_text(encoding='utf-8'))
+    prd = parse_prd(raw)
 
-    # Normalise to a list of story dicts
-    stories_raw: list[dict[str, Any]]
-    if isinstance(raw, list):
-        stories_raw = raw
-    elif isinstance(raw, dict) and 'stories' in raw:
-        stories_raw = raw['stories']
+    entries: list[UserStory] | list[FlatStory]
+    if isinstance(prd, Prd):
+        entries = prd.userStories
     else:
-        raise ValueError(
-            f"Unrecognised PRD format in {prd_path}: expected a JSON array or an object with a 'stories' key."
-        )
+        entries = prd
 
     stories: dict[str, StoryWorkflow] = {}
-    for entry in stories_raw:
-        story_id = str(entry.get('id', ''))
+    for entry in entries:
+        story_id = entry.id or ''
         if not story_id:
             raise ValueError(f"PRD story missing 'id' field: {entry}")
 
-        title = str(entry.get('title', ''))
-        description = str(entry.get('description', ''))
-        acceptance_criteria = list(entry.get('acceptanceCriteria', entry.get('acceptance_criteria', [])))
-        depends_on = list(entry.get('depends_on', []))
-
         stories[story_id] = StoryWorkflow(
             story_id=story_id,
-            title=title,
-            description=description,
-            acceptance_criteria=acceptance_criteria,
+            title=entry.title or '',
+            description=entry.description or '',
+            acceptance_criteria=list(entry.acceptanceCriteria),
             status=StoryStatus.unclaimed,
-            depends_on=depends_on,
+            depends_on=list(entry.depends_on),
             steps=[],
             history=[],
         )

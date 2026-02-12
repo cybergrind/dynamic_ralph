@@ -276,9 +276,20 @@ class TestInitializeStateFromPrd:
 
     def test_rich_format(self, tmp_path):
         prd_data = {
-            'stories': [
-                {'id': 'US-001', 'title': 'Story 1'},
-            ]
+            'project': 'Test',
+            'branchName': 'ralph/test',
+            'description': 'Test PRD',
+            'userStories': [
+                {
+                    'id': 'US-001',
+                    'title': 'Story 1',
+                    'description': 'Desc',
+                    'acceptanceCriteria': ['AC-1'],
+                    'priority': 1,
+                    'passes': False,
+                    'notes': '',
+                },
+            ],
         }
         prd_path = tmp_path / 'prd.json'
         prd_path.write_text(json.dumps(prd_data))
