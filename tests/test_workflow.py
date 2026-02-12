@@ -38,6 +38,7 @@ from multi_agent.workflow.prompts import (
     compose_step_prompt,
 )
 from multi_agent.workflow.scratch import (
+    _global_scratch_path,
     append_global_scratch,
     append_story_scratch,
     cleanup_story_scratch,
@@ -756,6 +757,27 @@ class TestScratch:
 
     def test_story_scratch_cleanup_nonexistent(self, tmp_path):
         cleanup_story_scratch('US-999', tmp_path)  # should not raise
+
+    def test_scratch_warns_when_shared_dir_is_cwd(self, tmp_path, monkeypatch, caplog):
+        monkeypatch.chdir(tmp_path)
+        with caplog.at_level('WARNING', logger='multi_agent.workflow.scratch'):
+            _global_scratch_path(tmp_path)
+        assert 'shared_dir resolves to cwd' in caplog.text
+        assert str(tmp_path) in caplog.text
+
+    def test_scratch_warns_when_shared_dir_contains_git(self, tmp_path, caplog):
+        (tmp_path / '.git').mkdir()
+        with caplog.at_level('WARNING', logger='multi_agent.workflow.scratch'):
+            _global_scratch_path(tmp_path)
+        assert 'shared_dir contains .git' in caplog.text
+        assert str(tmp_path) in caplog.text
+
+    def test_scratch_no_warning_for_subdirectory(self, tmp_path, caplog):
+        sub = tmp_path / 'sub'
+        sub.mkdir()
+        with caplog.at_level('WARNING', logger='multi_agent.workflow.scratch'):
+            _global_scratch_path(sub)
+        assert caplog.text == ''
 
 
 # ===========================================================================

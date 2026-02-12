@@ -5,6 +5,7 @@ Two types of scratch files provide persistent memory across workflow steps:
 - scratch_<story_id>.md (per-story) — scoped to a single story, no locking needed
 """
 
+import logging
 import os
 import tempfile
 from pathlib import Path
@@ -12,21 +13,41 @@ from pathlib import Path
 from multi_agent.filelock import FileLock
 
 
+logger = logging.getLogger(__name__)
+
 LOCK_TIMEOUT: int = 60
 
 GLOBAL_SCRATCH = 'scratch.md'
 GLOBAL_SCRATCH_LOCK = 'scratch.md.lock'
 
 
+def _warn_if_root(shared_dir: Path) -> None:
+    """Emit a warning if shared_dir appears to be the workspace root."""
+    resolved = shared_dir.resolve()
+    if resolved == Path.cwd().resolve():
+        logger.warning(
+            'shared_dir resolves to cwd, scratch files may write to workspace root: %s',
+            shared_dir,
+        )
+    elif (shared_dir / '.git').exists():
+        logger.warning(
+            'shared_dir contains .git, scratch files may write to workspace root: %s',
+            shared_dir,
+        )
+
+
 def _global_scratch_path(shared_dir: Path) -> Path:
+    _warn_if_root(shared_dir)
     return shared_dir / GLOBAL_SCRATCH
 
 
 def _global_lock_path(shared_dir: Path) -> str:
+    _warn_if_root(shared_dir)
     return str(shared_dir / GLOBAL_SCRATCH_LOCK)
 
 
 def _story_scratch_path(story_id: str, shared_dir: Path) -> Path:
+    _warn_if_root(shared_dir)
     return shared_dir / f'scratch_{story_id}.md'
 
 
