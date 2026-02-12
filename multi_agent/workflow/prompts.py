@@ -22,8 +22,8 @@ existing patterns, related tests, current behavior.
 ### Instructions
 - Pure exploration — read code, grep for patterns, check models and schemas.
 - Do NOT make decisions or plan. Just gather context.
-- Write all findings to your story scratch file.
 - Identify: target files, related models, existing test patterns, current behavior.
+- Your SUMMARY section at the end of the response is automatically persisted to the story scratch file.
 
 ### Exit Criteria
 All areas relevant to the story are identified and documented.
@@ -39,7 +39,7 @@ End your response with a SUMMARY section (3-5 lines) capturing key findings.""",
 - Focus on decision-making based on gathered context.
 - If the story is more complex than a single coding round, use workflow editing to split/add steps.
 - For simple stories, skip unnecessary steps (e.g., skip test_architecture for migration-only work).
-- Write the plan to your story scratch file.
+- Your SUMMARY section at the end of the response is automatically persisted to the story scratch file.
 
 ### Workflow Editing
 You may modify remaining steps by writing a JSON edit file (path provided below in the Workflow Editing section). \
