@@ -200,6 +200,13 @@ class TestClaudeCodeBuildDockerCommand:
 
     @patch('multi_agent.backends.claude_code.image_exists', return_value=True)
     @patch('multi_agent.backends.claude_code.docker_sock_gid', return_value='999')
+    def test_precommit_cache_volume(self, mock_gid, mock_exists):
+        backend = ClaudeCodeBackend()
+        cmd = backend.build_docker_command(['echo'], agent_id=1, workspace='/tmp/ws')
+        assert 'ralph_precommit_cache:/home/agent/.cache/pre-commit' in cmd
+
+    @patch('multi_agent.backends.claude_code.image_exists', return_value=True)
+    @patch('multi_agent.backends.claude_code.docker_sock_gid', return_value='999')
     @patch(
         'multi_agent.backends.claude_code.get_git_author_identity',
         return_value=('Host User', 'host@example.com'),

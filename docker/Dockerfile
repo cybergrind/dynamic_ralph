@@ -32,7 +32,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.10.2 /uv /usr/local/bin/uv
 # Pre-install project Python deps so `uv run` is instant at runtime
 ENV UV_PROJECT_ENVIRONMENT=/tmp/venv
 WORKDIR /workspace
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock .pre-commit-config.yaml ./
 RUN uv sync --frozen --no-install-project
 
 # Claude Code CLI
@@ -56,3 +56,6 @@ RUN su - agent -c "git config --global --add safe.directory /workspace"
 
 USER agent
 ENV COLORTERM=truecolor
+
+# Pre-cache pre-commit hook environments so linting skips the install step
+RUN uv run pre-commit install-hooks

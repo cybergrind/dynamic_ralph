@@ -100,6 +100,8 @@ class ClaudeCodeBackend:
             f'{claude_config}:/home/agent/.claude',
             '-v',
             f'{host_config_claude}:/home/agent/.config/claude',
+            '-v',
+            'ralph_precommit_cache:/home/agent/.cache/pre-commit',
             '-w',
             '/workspace',
             RALPH_IMAGE,
