@@ -1109,13 +1109,13 @@ def main() -> None:
         '--state-path',
         type=Path,
         default=None,
-        help='Custom state file path (default: <run_dir>/workflow_state.json)',
+        help='Custom state file path (default: <shared_dir>/workflow_state.json)',
     )
     parser.add_argument(
         '--shared-dir',
         type=Path,
         default=None,
-        help='Shared directory for scratch files (default: auto-generated run directory)',
+        help='Shared directory for logs, scratch files, and state (default: auto-generated under run_ralph/)',
     )
     parser.add_argument(
         '--max-iterations',
