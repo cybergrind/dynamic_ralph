@@ -60,7 +60,12 @@ def _git_current_sha() -> str:
         capture_output=True,
         text=True,
     )
-    return result.stdout.strip()
+    if result.returncode != 0:
+        raise RuntimeError(f'git rev-parse HEAD failed: {result.stderr.strip()}')
+    sha = result.stdout.strip()
+    if not sha:
+        raise RuntimeError('git rev-parse HEAD returned empty output')
+    return sha
 
 
 def _git_save_diff(output_path: Path, base_sha: str) -> None:
@@ -76,8 +81,14 @@ def _git_save_diff(output_path: Path, base_sha: str) -> None:
 
 def _git_reset_hard(target_sha: str) -> None:
     """Hard-reset to *target_sha* and clean untracked files."""
-    subprocess.run(['git', 'reset', '--hard', target_sha], check=True)
-    subprocess.run(['git', 'clean', '-fd'], check=True)
+    if not target_sha:
+        logger.error('_git_reset_hard called with empty target SHA, skipping reset')
+        return
+    try:
+        subprocess.run(['git', 'reset', '--hard', target_sha], check=True)
+        subprocess.run(['git', 'clean', '-fd'], check=True)
+    except subprocess.CalledProcessError as exc:
+        logger.error('git reset --hard %s failed: %s', target_sha, exc)
 
 
 # ---------------------------------------------------------------------------
@@ -384,6 +395,14 @@ def execute_step(
 
     # ---- (k) Timeout handling -------------------------------------------------
     if agent_result.timed_out:
+        # Discard any workflow edits the agent may have written
+        discard_edit_file(story_id, shared_dir)
+
+        # Save the diff for debugging and rollback git to clean state
+        diff_path = shared_dir / 'logs' / story_id / f'{step_id}.timeout.diff'
+        _git_save_diff(diff_path, git_sha_at_start)
+        _git_reset_hard(git_sha_at_start)
+
         step.status = StepStatus.cancelled
         step.completed_at = _now_iso()
         step.error = f'Step timed out after {timeout}s'

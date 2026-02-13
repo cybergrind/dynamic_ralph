@@ -53,6 +53,7 @@ from multi_agent.workflow.state import (
     initialize_state_from_prd,
     load_state,
     locked_state,
+    reset_in_progress,
     save_state,
     validate_dependency_graph,
 )
@@ -228,6 +229,74 @@ class TestState:
 
         result = find_assignable_story(state)
         assert result.story_id == 'US-002'
+
+
+class TestResetInProgress:
+    def test_resets_in_progress_steps_to_pending(self, tmp_path):
+        steps = [
+            Step(id='step-001', type=StepType.context_gathering, status=StepStatus.completed),
+            Step(
+                id='step-002', type=StepType.planning, status=StepStatus.in_progress, started_at='2025-01-01T00:00:00Z'
+            ),
+            Step(id='step-003', type=StepType.coding, status=StepStatus.pending),
+        ]
+        story = _make_story(steps=steps, status=StoryStatus.in_progress)
+        state = _make_state(story)
+        state_path = tmp_path / 'state.json'
+        save_state(state, state_path)
+
+        reset_in_progress(state_path)
+
+        reloaded = load_state(state_path)
+        s = reloaded.stories['US-001']
+        assert s.steps[0].status == StepStatus.completed
+        assert s.steps[1].status == StepStatus.pending
+        assert s.steps[1].started_at is None
+        assert s.steps[2].status == StepStatus.pending
+
+    def test_resets_in_progress_story_to_unclaimed(self, tmp_path):
+        steps = [
+            Step(id='step-001', type=StepType.context_gathering, status=StepStatus.completed),
+            Step(
+                id='step-002', type=StepType.planning, status=StepStatus.in_progress, started_at='2025-01-01T00:00:00Z'
+            ),
+        ]
+        story = _make_story(steps=steps, status=StoryStatus.in_progress)
+        story.agent_id = 1
+        state = _make_state(story)
+        state_path = tmp_path / 'state.json'
+        save_state(state, state_path)
+
+        reset_in_progress(state_path)
+
+        reloaded = load_state(state_path)
+        s = reloaded.stories['US-001']
+        assert s.status == StoryStatus.unclaimed
+        assert s.agent_id is None
+
+    def test_does_not_touch_completed_or_failed(self, tmp_path):
+        s1 = _make_story('US-001', status=StoryStatus.completed)
+        s2 = _make_story('US-002', status=StoryStatus.failed)
+        state = _make_state(s1, s2)
+        state_path = tmp_path / 'state.json'
+        save_state(state, state_path)
+
+        reset_in_progress(state_path)
+
+        reloaded = load_state(state_path)
+        assert reloaded.stories['US-001'].status == StoryStatus.completed
+        assert reloaded.stories['US-002'].status == StoryStatus.failed
+
+    def test_no_op_when_nothing_in_progress(self, tmp_path):
+        story = _make_story(status=StoryStatus.unclaimed)
+        state = _make_state(story)
+        state_path = tmp_path / 'state.json'
+        save_state(state, state_path)
+
+        reset_in_progress(state_path)
+
+        reloaded = load_state(state_path)
+        assert reloaded.stories['US-001'].status == StoryStatus.unclaimed
 
 
 class TestDependencyValidation:

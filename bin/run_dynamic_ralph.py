@@ -41,6 +41,7 @@ from multi_agent.workflow.state import (
     initialize_state_from_prd,
     load_state,
     locked_state,
+    reset_in_progress,
     save_state,
 )
 from multi_agent.workflow.steps import create_default_workflow
@@ -386,6 +387,7 @@ def run_serial(
     # Initialize state from PRD if needed
     if state_path.exists() and resume:
         _print_progress(f'Resuming from existing state: {state_path}', shared_dir=shared_dir)
+        reset_in_progress(state_path)
     elif state_path.exists() and not resume:
         _print_progress(f'Re-initializing state from PRD (overwriting {state_path})', shared_dir=shared_dir)
         initialize_state_from_prd(prd_path, state_path)
@@ -593,6 +595,7 @@ def run_parallel(
     # Initialize state
     if state_path.exists() and resume:
         _print_progress(f'Resuming from existing state: {state_path}', shared_dir=shared_dir)
+        reset_in_progress(state_path)
     elif state_path.exists() and not resume:
         _print_progress(f'Re-initializing state from PRD (overwriting {state_path})', shared_dir=shared_dir)
         initialize_state_from_prd(prd_path, state_path)

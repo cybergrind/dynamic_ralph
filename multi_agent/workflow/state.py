@@ -11,7 +11,7 @@ from pathlib import Path
 
 from multi_agent.filelock import FileLock
 from multi_agent.models import FlatStory, Prd, UserStory, parse_prd
-from multi_agent.workflow.models import StoryStatus, StoryWorkflow, WorkflowState
+from multi_agent.workflow.models import StepStatus, StoryStatus, StoryWorkflow, WorkflowState
 
 
 LOCK_TIMEOUT: int = 60
@@ -110,6 +110,36 @@ def initialize_state_from_prd(
     validate_dependency_graph(state)
     save_state(state, state_path)
     return state
+
+
+def reset_in_progress(state_path: Path) -> None:
+    """Reset any in_progress steps/stories to pending/unclaimed.
+
+    Called on ``--resume`` to recover from a previous crash where the
+    orchestrator was killed while steps were still running.
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    with locked_state(state_path) as state:
+        for story in state.stories.values():
+            for step in story.steps:
+                if step.status == StepStatus.in_progress:
+                    logger.warning(
+                        'Resetting stuck step %s/%s to pending',
+                        story.story_id,
+                        step.id,
+                    )
+                    step.status = StepStatus.pending
+                    step.started_at = None
+            if story.status == StoryStatus.in_progress:
+                logger.warning(
+                    'Resetting stuck story %s to unclaimed',
+                    story.story_id,
+                )
+                story.status = StoryStatus.unclaimed
+                story.agent_id = None
 
 
 def find_assignable_story(state: WorkflowState) -> StoryWorkflow | None:
