@@ -558,7 +558,7 @@ def _merge_worktree(agent_id: int, story_id: str) -> bool:
 
     # Commit the squash merge
     result = subprocess.run(
-        ['git', 'commit', '-m', f'feat: {story_id} (squash merge from ralph/{story_id})'],
+        ['git', 'commit', '-m', f'{story_id} (squash merge from ralph/{story_id})'],
         capture_output=True,
         text=True,
     )

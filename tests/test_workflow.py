@@ -824,6 +824,16 @@ class TestPrompts:
         prompt = compose_step_prompt(story, step, '', '', '', shared_dir=Path('/test/shared'))
         assert 'Context Gathering' in prompt
 
+    def test_context_gathering_includes_commit_convention_discovery(self):
+        story = _make_story()
+        step = story.steps[0]  # context_gathering
+        prompt = compose_step_prompt(story, step, '', '', '', shared_dir=Path('/test/shared'))
+        assert 'git log --oneline' in prompt
+        assert 'commit' in prompt.lower()
+        assert 'convention' in prompt.lower()
+        assert 'prefix vocabulary' in prompt.lower()
+        assert 'casing rules' in prompt.lower()
+
     def test_compose_step_prompt_includes_prior_notes(self):
         story = _make_story()
         story.steps[0].status = StepStatus.completed

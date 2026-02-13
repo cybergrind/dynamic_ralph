@@ -86,3 +86,16 @@ Constants in `multi_agent/constants.py` are configurable via environment variabl
 - `RALPH_GIT_EMAIL` - Git committer email for commits (default: `claude-agent@dynamic-ralph.dev`)
 - `RALPH_GIT_AUTHOR_NAME` - Git author name (default: host `git config user.name`)
 - `RALPH_GIT_AUTHOR_EMAIL` - Git author email (default: host `git config user.email`)
+
+## Commit Messages
+
+This project uses component-scoped commit messages:
+
+```
+<component>: <lowercase verb phrase>
+```
+
+Components: orchestrator, executor, prompts, workflow, backend, models, tests,
+infra, docs, gitignore, runner, scratch, retrospective.
+
+Start with a lowercase verb. No trailing period. No story IDs.

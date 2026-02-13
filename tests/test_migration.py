@@ -214,6 +214,11 @@ class TestNoStalePromptReferences:
         'tasks/prd-',
         'resources/geodb',
         'to your story scratch file',
+        # No hardcoded commit format prefixes — steps must reference the repo's convention
+        '"style:',
+        '"feat:',
+        '"fix:',
+        '"test:',
     ]
 
     def test_step_instructions_no_forbidden_strings(self):
