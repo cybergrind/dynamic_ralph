@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -578,6 +579,13 @@ def _process_workflow_edits(
         story_id,
         step.id,
     )
+
+    # Snapshot the edit file before removing it
+    edit_src = shared_dir / 'workflow_edits' / f'{story_id}.json'
+    if edit_src.exists():
+        snapshot_dir = shared_dir / 'logs' / story_id
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(edit_src, snapshot_dir / f'{step.id}.edits.json')
 
     # Clean up the edit file
     remove_edit_file(story_id, shared_dir)

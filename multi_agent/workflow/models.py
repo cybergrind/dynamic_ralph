@@ -151,6 +151,7 @@ class WorkflowState(BaseModel):
     version: int = 1
     created_at: str = ''
     prd_file: str = ''
+    finished_at: str | None = None
     stories: dict[str, StoryWorkflow] = Field(default_factory=dict)
 
 

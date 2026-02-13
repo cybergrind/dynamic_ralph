@@ -983,3 +983,89 @@ class TestTeeStderr:
 
         assert terminal.getvalue() == 'no newline'
         assert log_file.getvalue() == 'no newline'
+
+
+# ===========================================================================
+# WorkflowState.finished_at (models.py)
+# ===========================================================================
+
+
+class TestFinishedAt:
+    def test_default_is_none(self):
+        """WorkflowState.finished_at defaults to None."""
+        state = WorkflowState(version=1, created_at='2025-01-01T00:00:00Z', prd_file='prd.json')
+        assert state.finished_at is None
+
+    def test_roundtrip_serialization(self):
+        """finished_at survives Pydantic serialization roundtrip."""
+        state = _make_state(_make_story())
+        state.finished_at = '2025-06-01T12:00:00+00:00'
+        data = state.model_dump()
+        restored = WorkflowState.model_validate(data)
+        assert restored.finished_at == '2025-06-01T12:00:00+00:00'
+
+    def test_backward_compatible_with_missing_field(self):
+        """State JSON without finished_at loads fine (defaults to None)."""
+        data = {
+            'version': 1,
+            'created_at': '2025-01-01T00:00:00Z',
+            'prd_file': 'prd.json',
+            'stories': {},
+        }
+        state = WorkflowState.model_validate(data)
+        assert state.finished_at is None
+
+    def test_persisted_via_locked_state(self, tmp_path):
+        """finished_at can be set through locked_state and persists."""
+        state = _make_state(_make_story())
+        state_path = tmp_path / 'state.json'
+        save_state(state, state_path)
+
+        with locked_state(state_path) as s:
+            s.finished_at = '2025-06-01T12:00:00+00:00'
+
+        reloaded = load_state(state_path)
+        assert reloaded.finished_at == '2025-06-01T12:00:00+00:00'
+
+
+# ===========================================================================
+# Edit file snapshot (executor.py)
+# ===========================================================================
+
+
+class TestEditFileSnapshot:
+    def test_edit_snapshot_created_before_removal(self, tmp_path):
+        """Edit file is copied to logs/<story_id>/<step_id>.edits.json before removal."""
+
+        from multi_agent.workflow.executor import _process_workflow_edits
+
+        story = _make_story()
+        step = story.steps[0]
+        step.status = StepStatus.completed
+
+        # Create workflow_edits dir and edit file
+        edits_dir = tmp_path / 'workflow_edits'
+        edits_dir.mkdir()
+        edit_data = [
+            {
+                'operation': 'skip',
+                'target_step_id': 'step-009',
+                'reason': 'not needed',
+            }
+        ]
+        (edits_dir / 'US-001.json').write_text(json.dumps(edit_data))
+
+        # Create logs dir
+        logs_dir = tmp_path / 'logs' / 'US-001'
+        logs_dir.mkdir(parents=True)
+
+        _process_workflow_edits(story, step, agent_id=1, shared_dir=tmp_path)
+
+        # Edit file should be removed
+        assert not (edits_dir / 'US-001.json').exists()
+
+        # Snapshot should exist
+        snapshot = logs_dir / f'{step.id}.edits.json'
+        assert snapshot.exists()
+        snapshot_data = json.loads(snapshot.read_text())
+        assert snapshot_data == edit_data

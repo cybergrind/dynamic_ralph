@@ -8,8 +8,11 @@ Supports three modes:
 """
 
 import argparse
+import json
 import logging
+import os
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -112,6 +115,36 @@ def generate_run_dir() -> Path:
     (run_dir / 'workflow_edits').mkdir(exist_ok=True)
     (run_dir / 'logs').mkdir(exist_ok=True)
     return run_dir
+
+
+def _write_metadata(shared_dir: Path) -> None:
+    """Write metadata.json with environment info for post-run analysis."""
+    git_branch = subprocess.run(
+        ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    git_sha = subprocess.run(
+        ['git', 'rev-parse', 'HEAD'],
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    ralph_env_vars = {k: v for k, v in os.environ.items() if k.startswith('RALPH_')}
+
+    metadata = {
+        'timestamp': datetime.now(UTC).isoformat(),
+        'hostname': socket.gethostname(),
+        'python_version': sys.version,
+        'git_branch': git_branch,
+        'git_sha': git_sha,
+        'ralph_image': os.environ.get('RALPH_IMAGE', ''),
+        'ralph_env_vars': ralph_env_vars,
+    }
+
+    metadata_path = shared_dir / 'metadata.json'
+    metadata_path.write_text(json.dumps(metadata, indent=2) + '\n')
 
 
 # ---------------------------------------------------------------------------
@@ -374,6 +407,8 @@ def run_serial(
                 ]
                 if not remaining:
                     _print_progress(f'\nAll stories finished after {iteration - 1} iterations.', shared_dir=shared_dir)
+                    with locked_state(state_path) as s:
+                        s.finished_at = _now_iso()
                     break
                 else:
                     # Stories exist but none are assignable (blocked by deps)
@@ -645,6 +680,8 @@ def run_parallel(
                 ]
                 if not remaining:
                     _print_progress('\nAll stories finished (parallel mode).', shared_dir=shared_dir)
+                    with locked_state(state_path) as s:
+                        s.finished_at = _now_iso()
                 else:
                     _print_progress(
                         f'\nNo assignable stories. {len(remaining)} stories remain but are blocked or in progress.',
@@ -863,59 +900,76 @@ def main() -> None:
         if args.state_path is None:
             args.state_path = args.shared_dir / 'workflow_state.json'
 
+    # Write metadata and copy PRD at startup
+    _write_metadata(args.shared_dir)
+    if args.prd is not None and args.prd.exists():
+        shutil.copy2(args.prd, args.shared_dir / 'prd.json')
+
     # Dispatch to the appropriate mode
-    if args.story_id is not None:
-        # Single-story mode (used by parallel spawner)
-        run_single_story(
-            story_id=args.story_id,
-            agent_id=args.agent_id,
-            state_path=args.state_path,
-            shared_dir=args.shared_dir,
-            max_turns=args.max_turns,
-        )
-
-    elif args.task is not None and args.prd is None:
-        # One-shot mode
-        rc = run_one_shot(
-            task=args.task,
-            agent_id=args.agent_id,
-            max_turns=args.max_turns,
-            shared_dir=args.shared_dir,
-            state_path=args.state_path,
-        )
-        sys.exit(rc)
-
-    elif args.prd is not None:
-        # PRD mode
-        if not args.prd.exists():
-            print(f'Error: PRD file not found: {args.prd}', file=sys.stderr)
-            sys.exit(1)
-
-        if args.agents > 1:
-            # Parallel mode
-            run_parallel(
-                prd_path=args.prd,
-                num_agents=args.agents,
-                max_iterations=args.max_iterations,
-                state_path=args.state_path,
-                shared_dir=args.shared_dir,
-                resume=args.resume,
-                max_turns=args.max_turns,
-            )
-        else:
-            # Serial mode
-            run_serial(
-                prd_path=args.prd,
+    exit_status = 'success'
+    try:
+        if args.story_id is not None:
+            # Single-story mode (used by parallel spawner)
+            run_single_story(
+                story_id=args.story_id,
                 agent_id=args.agent_id,
-                max_iterations=args.max_iterations,
                 state_path=args.state_path,
                 shared_dir=args.shared_dir,
-                resume=args.resume,
                 max_turns=args.max_turns,
             )
 
-    else:
-        parser.error('Provide a task (positional) for one-shot mode or --prd for PRD mode.')
+        elif args.task is not None and args.prd is None:
+            # One-shot mode
+            rc = run_one_shot(
+                task=args.task,
+                agent_id=args.agent_id,
+                max_turns=args.max_turns,
+                shared_dir=args.shared_dir,
+                state_path=args.state_path,
+            )
+            sys.exit(rc)
+
+        elif args.prd is not None:
+            # PRD mode
+            if not args.prd.exists():
+                print(f'Error: PRD file not found: {args.prd}', file=sys.stderr)
+                sys.exit(1)
+
+            if args.agents > 1:
+                # Parallel mode
+                run_parallel(
+                    prd_path=args.prd,
+                    num_agents=args.agents,
+                    max_iterations=args.max_iterations,
+                    state_path=args.state_path,
+                    shared_dir=args.shared_dir,
+                    resume=args.resume,
+                    max_turns=args.max_turns,
+                )
+            else:
+                # Serial mode
+                run_serial(
+                    prd_path=args.prd,
+                    agent_id=args.agent_id,
+                    max_iterations=args.max_iterations,
+                    state_path=args.state_path,
+                    shared_dir=args.shared_dir,
+                    resume=args.resume,
+                    max_turns=args.max_turns,
+                )
+
+        else:
+            parser.error('Provide a task (positional) for one-shot mode or --prd for PRD mode.')
+    except KeyboardInterrupt:
+        exit_status = 'interrupted'
+        raise
+    except SystemExit:
+        raise
+    except Exception:
+        exit_status = 'failure'
+        raise
+    finally:
+        append_summary(f'Run finished: {exit_status}', args.shared_dir)
 
 
 if __name__ == '__main__':
