@@ -147,13 +147,22 @@ Every proposal must contain:
 
 A proposal passes if it has:
 - [ ] Actual code (type definitions, signatures) -- not just prose
-- [ ] Specific file paths from the codebase
+- [ ] Specific references to existing code (function names, class names,
+      or line ranges from key files -- not just file paths)
 - [ ] A migration plan (even if it's "nothing breaks")
 - [ ] A "What I'd argue" section with a genuine case
 - [ ] A "What worries me" section with honest concerns
 
 If a proposal fails 3+ checks, send it back for revision. If >50% of
 proposals fail, the framing is probably bad -- reframe the question.
+
+### Proposal Labels
+
+Label proposals alphabetically by agent index: Agent 0 produces
+Proposal A, Agent 1 produces Proposal B, and so on. All subsequent
+references in debate entries and votes MUST use these labels, not
+agent numbers. This prevents confusion between "Agent 2's proposal"
+and "the proposal Agent 2 was critiquing."
 
 ---
 
@@ -211,21 +220,25 @@ the debate, not just evaluate proposals in isolation.
 
 ### What Goes Into a Vote
 
-Each voter writes:
+Each voter writes a structured vote with these fields:
 
-1. **Winner** -- Which approach they'd adopt.
-2. **Decisive argument** -- The specific argument from the debate that
-   was most persuasive. "Agent 3's point about migration failures in
-   files without version fields convinced me that Proposal A's
-   migration path is too risky."
-3. **Concerns about the winner** -- Even if you voted for it, what's
-   the biggest risk?
-4. **Merge suggestion** (optional) -- If the best outcome combines
-   elements from multiple proposals, describe the hybrid.
+1. **Winner** (required) -- Which proposal letter (A, B, C...).
+2. **Decisive argument** (required) -- The specific debate argument
+   that was most persuasive. Must cite a specific agent and their
+   argument, not just restate the proposal's merits.
+3. **Concerns about the winner** (required) -- The biggest risk, even
+   if you voted for it. Shared by 3+ voters, this triggers the veto.
+4. **Unrefuted arguments** (optional) -- Debate arguments no other
+   agent successfully countered. Feeds the override rule.
+5. **Merge suggestion** (optional) -- If combining elements of
+   multiple proposals would be better, describe the hybrid.
+
+Votes missing required fields are sent back for revision.
 
 ### Decision Rules
 
-**Strong win (70%+):** Adopt. The debate produced consensus.
+**Strong win (70%+):** Adopt, unless a veto or override applies (see
+below). The debate produced consensus.
 
 **Majority win (50-69%):** Adopt with a validation plan. After
 implementation, verify the concerns raised by the minority. If they
@@ -239,12 +252,21 @@ were right, revisit.
 
 **Veto rule:** If 3+ voters flag the same fatal flaw in a proposal
 (regardless of its vote count), it cannot win. The next-best
-alternative wins, or the flaw is patched and re-voted.
+alternative wins, or the flaw is patched and re-voted. A veto is
+evaluated BEFORE the override rule. If the vetoed proposal is also
+the subject of an override argument, the veto takes precedence --
+the flaw must be fixed first.
 
 **Override rule:** If one agent made an argument in the debate that NO
 voter was able to counter, and the winner contradicts that argument,
 escalate. An unrefuted argument is stronger than a vote count. This is
 the "smartest guy" principle in action.
+
+To determine "unrefuted": an argument is unrefuted if (a) it appeared
+in a debate entry, (b) no subsequent debate entry or vote explicitly
+addressed it with a counterargument, and (c) at least one voter
+flagged it in their `Unrefuted arguments` field. The operator makes
+the final call on whether a counterargument was substantive.
 
 ---
 
@@ -397,65 +419,46 @@ Each agent is a separate CLI invocation with no shared conversation
 state.
 
 ```bash
-# Assign identities
-IDENTITIES=(
-  "docs/identities/i_pydantic.md"
-  "docs/identities/i_httpx.md"
-  "docs/identities/i_tokio.md"
-)
+IDENTITIES=("docs/identities/i_pydantic.md" "docs/identities/i_httpx.md" ...)
 CODEX="docs/multi_agent_codex.md"
 TASK="path/to/framing.md"
 
-# Round 1: Propose (parallel)
+# Round 1: Propose (parallel, agents see identity + codex + task)
 for i in "${!IDENTITIES[@]}"; do
   cat "${IDENTITIES[$i]}" "$CODEX" "$TASK" > /tmp/prompt-$i.md
   claude -p "$(cat /tmp/prompt-$i.md)" \
-    --output-file "working/proposals/agent-$i.md" \
-    --max-turns 10 &
-done
-wait
+    --output-file "working/proposals/agent-$i.md" --max-turns 10 &
+done; wait
 
-# Round 2: Debate (parallel, each agent sees ALL proposals)
-ALL_PROPOSALS="working/proposals/all-proposals.md"
-cat working/proposals/agent-*.md > "$ALL_PROPOSALS"
+# Round 2: Debate (parallel, agents also see all proposals)
+cat working/proposals/agent-*.md > working/proposals/all-proposals.md
 for i in "${!IDENTITIES[@]}"; do
-  cat "${IDENTITIES[$i]}" "$CODEX" "$TASK" "$ALL_PROPOSALS" \
-    > /tmp/debate-prompt-$i.md
-  # Append debate instructions
-  echo "Round 2: Read all proposals above. Write your debate entry." \
-    >> /tmp/debate-prompt-$i.md
-  claude -p "$(cat /tmp/debate-prompt-$i.md)" \
-    --output-file "working/debate/agent-$i.md" \
-    --max-turns 5 &
-done
-wait
+  cat "${IDENTITIES[$i]}" "$CODEX" "$TASK" working/proposals/all-proposals.md \
+    > /tmp/prompt-$i.md
+  echo "Round 2: Write your debate entry." >> /tmp/prompt-$i.md
+  claude -p "$(cat /tmp/prompt-$i.md)" \
+    --output-file "working/debate/agent-$i.md" --max-turns 5 &
+done; wait
 
-# Round 3: Vote (parallel, each voter sees proposals + debate)
-ALL_DEBATE="working/debate/all-debate.md"
-cat working/debate/agent-*.md > "$ALL_DEBATE"
+# Round 3: Vote (parallel, agents also see all debate entries)
+cat working/debate/agent-*.md > working/debate/all-debate.md
 for i in "${!IDENTITIES[@]}"; do
-  cat "${IDENTITIES[$i]}" "$CODEX" "$ALL_PROPOSALS" "$ALL_DEBATE" \
-    > /tmp/vote-prompt-$i.md
-  echo "Round 3: Read all proposals and debate above. Cast your vote." \
-    >> /tmp/vote-prompt-$i.md
-  claude -p "$(cat /tmp/vote-prompt-$i.md)" \
-    --output-file "working/votes/agent-$i.md" \
-    --max-turns 3 &
-done
-wait
+  cat "${IDENTITIES[$i]}" "$CODEX" working/proposals/all-proposals.md \
+    working/debate/all-debate.md > /tmp/prompt-$i.md
+  echo "Round 3: Cast your vote." >> /tmp/prompt-$i.md
+  claude -p "$(cat /tmp/prompt-$i.md)" \
+    --output-file "working/votes/agent-$i.md" --max-turns 3 &
+done; wait
 ```
 
 ### Prompt Composition Order
 
-Order matters. Identity first -- it establishes who the agent is before
-they learn the rules or the task.
+Identity first -- it establishes who the agent is before they learn
+the rules or the task.
 
 ```
-1. IDENTITY            -- who you are (values, scars, instincts)
-2. CODEX               -- how the process works (this document)
-3. TASK FRAMING         -- what to solve (question, scope, criteria)
-4. PRIOR PROPOSALS      -- (Round 2+) what others proposed
-5. PRIOR DEBATE         -- (Round 3) how arguments played out
+1. IDENTITY        2. CODEX        3. TASK FRAMING
+4. PRIOR PROPOSALS (Round 2+)      5. PRIOR DEBATE (Round 3)
 ```
 
 ### Sizing
@@ -487,6 +490,31 @@ debate when the question is complex.
 
 Kill agents that exceed the timeout. If you're below quorum, re-run the
 missing agents rather than proceeding short-handed.
+
+### Phase Transition Checklist
+
+**Propose → Debate:**
+- [ ] All proposals pass the quality gate
+- [ ] Proposals concatenated into `all-proposals.md` with `## Proposal A: <identity>` headers
+- [ ] At least 2 proposals differ structurally (different types, mechanisms, or file organization). If all converge, identities failed to differentiate -- re-run or reframe.
+- [ ] If >50% failed the quality gate, STOP and reframe
+
+**Debate → Vote:**
+- [ ] All debate entries cite a specific claim from at least one other proposal by letter
+- [ ] Debate entries concatenated into `all-debate.md`
+- [ ] Flag any debate argument that appears unaddressed (override rule)
+
+**Vote → Decision:**
+- [ ] All votes contain required fields (Winner, Decisive argument, Concerns)
+- [ ] Tally computed in `tally.md`
+- [ ] If veto: verify 3+ voters cite the SAME flaw
+- [ ] If override candidate: verify argument was truly unrefuted
+- [ ] Decision record written; constraint addendum if multi-question
+
+**Iterating:**
+- [ ] Framing has changed (narrower scope, new constraint, or forced binary)
+- [ ] Agents receive prior debate and votes as context
+- [ ] Iteration count incremented (stop at 3)
 
 ### Working Directory Layout
 
