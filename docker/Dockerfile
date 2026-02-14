@@ -56,6 +56,3 @@ RUN su - agent -c "git config --global --add safe.directory /workspace"
 
 USER agent
 ENV COLORTERM=truecolor
-
-# Pre-cache pre-commit hook environments so linting skips the install step
-RUN uv run pre-commit install-hooks
