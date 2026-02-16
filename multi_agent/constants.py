@@ -10,6 +10,51 @@ import subprocess
 import sys
 
 
+# --- execution mode ---
+# Priority: explicit RALPH_MODE env var > auto-detect from git remote > third-party default.
+_VALID_MODES = frozenset({'self', 'third-party'})
+
+
+def _detect_ralph_mode() -> str:
+    """Detect execution mode from environment or git remote URL.
+
+    1. Explicit ``RALPH_MODE`` env var — highest priority.
+    2. Git remote URL contains ``dynamic_ralph`` or ``dynamic-ralph`` — self mode.
+    3. Default — ``third-party``.
+    """
+    explicit = os.environ.get('RALPH_MODE')
+    if explicit:
+        return explicit
+
+    try:
+        result = subprocess.run(
+            ['git', 'config', '--get', 'remote.origin.url'],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            url = result.stdout.strip().lower()
+            if 'dynamic_ralph' in url or 'dynamic-ralph' in url:
+                return 'self'
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    return 'third-party'
+
+
+RALPH_MODE: str = _detect_ralph_mode()
+
+if RALPH_MODE not in _VALID_MODES:
+    print(
+        f'FATAL: RALPH_MODE={RALPH_MODE!r} is invalid. Must be one of: {sorted(_VALID_MODES)}',
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+# --- internal docs path (baked into Docker image at build time) ---
+RALPH_INTERNAL_DOCS: str = '/opt/ralph'
+
 RALPH_IMAGE = os.environ.get('RALPH_IMAGE', 'ralph-agent:latest')
 COMPOSE_FILE = os.environ.get('RALPH_COMPOSE_FILE', 'compose.test.yml')
 ENV_FILE = os.environ.get('RALPH_ENV_FILE', '.env')

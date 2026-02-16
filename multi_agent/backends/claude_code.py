@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Iterator
 
 from multi_agent.backend import AgentEvent, AgentResult
-from multi_agent.constants import GIT_EMAIL, RALPH_IMAGE, get_git_author_identity
+from multi_agent.constants import GIT_EMAIL, RALPH_IMAGE, RALPH_MODE, get_git_author_identity
 from multi_agent.docker import build_image, docker_sock_gid, image_exists
 
 
@@ -80,6 +80,8 @@ class ClaudeCodeBackend:
             f'HOST_WORKSPACE={workspace}',
             '-e',
             'IS_SANDBOX=1',
+            '-e',
+            f'RALPH_MODE={RALPH_MODE}',
             '-e',
             'UV_PROJECT_ENVIRONMENT=/tmp/venv',
             '-e',

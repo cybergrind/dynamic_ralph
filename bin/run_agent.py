@@ -12,7 +12,7 @@ import os
 import sys
 from pathlib import Path
 
-from multi_agent.constants import GIT_EMAIL, RALPH_IMAGE, get_git_author_identity
+from multi_agent.constants import GIT_EMAIL, RALPH_IMAGE, RALPH_MODE, get_git_author_identity
 from multi_agent.docker import build_image, docker_sock_gid, image_exists
 
 
@@ -50,6 +50,8 @@ def build_interactive_docker_command(
         'GIT_COMMITTER_NAME=Claude Agent',
         '-e',
         f'GIT_COMMITTER_EMAIL={GIT_EMAIL}',
+        '-e',
+        f'RALPH_MODE={RALPH_MODE}',
         '-v',
         '/var/run/docker.sock:/var/run/docker.sock',
         '-v',

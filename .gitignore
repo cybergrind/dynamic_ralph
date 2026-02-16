@@ -25,6 +25,9 @@ Thumbs.db
 # uv
 .python-version
 
+# Scratch/working documents
+docs/scratches/
+
 # Dynamic Ralph runtime artifacts
 run_ralph/
 prd.json

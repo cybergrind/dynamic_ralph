@@ -874,6 +874,12 @@ def main() -> None:
         help='Rebuild Docker image',
     )
     parser.add_argument(
+        '--dev',
+        action='store_true',
+        default=False,
+        help='Force self-development mode (normally auto-detected from git remote).',
+    )
+    parser.add_argument(
         '--resume',
         action='store_true',
         help='Resume from existing workflow_state.json instead of reinitializing',
@@ -887,6 +893,10 @@ def main() -> None:
         format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
         stream=sys.stderr,
     )
+
+    # Handle --dev flag: force self mode before anything else
+    if args.dev:
+        os.environ['RALPH_MODE'] = 'self'
 
     # Build Docker image if requested or missing
     if args.build or not image_exists():

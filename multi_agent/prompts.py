@@ -1,5 +1,35 @@
 """Shared prompts and instructions for Claude Code agents."""
 
+from pathlib import Path
+
+from multi_agent.constants import RALPH_INTERNAL_DOCS, RALPH_MODE
+
+
+def _load_ralph_claude_md() -> str:
+    """Load Ralph's CLAUDE.md content for third-party mode system prompt."""
+    internal = Path(RALPH_INTERNAL_DOCS) / 'CLAUDE.md'
+    if internal.is_file():
+        return internal.read_text().strip()
+    local = Path('CLAUDE.md')
+    if local.is_file():
+        return local.read_text().strip()
+    return ''
+
+
+_RALPH_CLAUDE_MD_CONTENT: str = _load_ralph_claude_md()
+
+
+def build_system_prompt() -> str:
+    """Build the full system prompt for agent invocations.
+
+    Self mode: just BASE_AGENT_INSTRUCTIONS (unchanged behavior).
+    Third-party mode: prepend Ralph's CLAUDE.md as workflow conventions.
+    """
+    if RALPH_MODE != 'third-party' or not _RALPH_CLAUDE_MD_CONTENT:
+        return BASE_AGENT_INSTRUCTIONS
+    return f'## Ralph Workflow Conventions\n\n{_RALPH_CLAUDE_MD_CONTENT}\n\n{BASE_AGENT_INSTRUCTIONS}'
+
+
 BASE_AGENT_INSTRUCTIONS = """\
 ## First Steps
 Read CLAUDE.md for project conventions. If a docs/ directory exists, check for code guides or architecture docs.

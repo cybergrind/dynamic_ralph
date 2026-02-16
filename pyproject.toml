@@ -9,6 +9,14 @@ dependencies = [
   'pydantic>=2.0',
 ]
 
+[project.scripts]
+dynamic-ralph = 'bin.run_dynamic_ralph:main'
+ralph-agent = 'bin.run_agent:main'
+ralph-retro = 'bin.run_retrospective:main'
+
+[tool.setuptools.packages.find]
+include = ['multi_agent*', 'bin']
+
 # installed with: uv sync
 [dependency-groups]
 dev = ['ruff', 'pre-commit>=4.1.0', 'uv>=0.10.2', 'pytest>=8.0', 'pytest-asyncio>=0.24']

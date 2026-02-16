@@ -19,7 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from multi_agent.backend import AgentResult, get_backend
-from multi_agent.prompts import BASE_AGENT_INSTRUCTIONS
+from multi_agent.prompts import BASE_AGENT_INSTRUCTIONS, build_system_prompt
 from multi_agent.stream import display_agent_event
 from multi_agent.workflow.editing import (
     EditValidationError,
@@ -79,10 +79,42 @@ def _git_save_diff(output_path: Path, base_sha: str) -> None:
     output_path.write_text(result.stdout)
 
 
+def _is_git_worktree() -> bool:
+    """Return True if cwd is a git worktree (not the main working tree).
+
+    Destructive operations like ``git reset --hard`` are only safe in worktrees
+    because they are disposable.  On the main working tree, uncommitted work
+    would be permanently lost.
+    """
+    try:
+        common = subprocess.run(
+            ['git', 'rev-parse', '--git-common-dir'],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+        git_dir = subprocess.run(
+            ['git', 'rev-parse', '--git-dir'],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+        return common != git_dir
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
 def _git_reset_hard(target_sha: str) -> None:
-    """Hard-reset to *target_sha* and clean untracked files."""
+    """Hard-reset to *target_sha* and clean untracked files.
+
+    **Safety:** Only runs in a git worktree.  On the main working tree the
+    reset is skipped to protect uncommitted work.
+    """
     if not target_sha:
         logger.error('_git_reset_hard called with empty target SHA, skipping reset')
+        return
+    if not _is_git_worktree():
+        logger.warning('Skipping git reset on main working tree to protect uncommitted work')
         return
     try:
         subprocess.run(['git', 'reset', '--hard', target_sha], check=True)
@@ -173,7 +205,7 @@ def _launch_agent(
     # -- build the agent command ------------------------------------------------
     base_cmd = backend.build_command(
         prompt,
-        system_prompt=BASE_AGENT_INSTRUCTIONS,
+        system_prompt=build_system_prompt(),
         max_turns=max_turns,
     )
 
@@ -194,12 +226,17 @@ def _launch_agent(
     # Derive stderr log path alongside the .jsonl log
     stderr_log_path = log_path.with_suffix('.stderr.log')
 
+    # Strip CLAUDECODE from env to avoid nested-session detection when the
+    # orchestrator itself runs inside a Claude Code session.
+    agent_env = {k: v for k, v in os.environ.items() if k != 'CLAUDECODE'}
+
     process = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         bufsize=1,
+        env=agent_env,
     )
 
     log_file = open(log_path, 'w')
