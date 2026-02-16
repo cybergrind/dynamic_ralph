@@ -72,6 +72,7 @@ class TestBuildInteractiveDockerCommand:
     @patch('bin.run_agent.image_exists', return_value=False)
     @patch('bin.run_agent.build_image')
     @patch('bin.run_agent.os.execvp')
+    @patch('sys.argv', ['ralph-agent'])
     def test_main_builds_image_when_missing(self, mock_exec, mock_build, mock_exists):
         from bin.run_agent import main
 
@@ -82,11 +83,23 @@ class TestBuildInteractiveDockerCommand:
     @patch('bin.run_agent.image_exists', return_value=True)
     @patch('bin.run_agent.build_image')
     @patch('bin.run_agent.os.execvp')
+    @patch('sys.argv', ['ralph-agent'])
     def test_main_skips_build_when_image_exists(self, mock_exec, mock_build, mock_exists):
         from bin.run_agent import main
 
         main()
         mock_build.assert_not_called()
+        mock_exec.assert_called_once()
+
+    @patch('bin.run_agent.image_exists', return_value=True)
+    @patch('bin.run_agent.build_image')
+    @patch('bin.run_agent.os.execvp')
+    @patch('sys.argv', ['ralph-agent', '--build'])
+    def test_main_build_flag_forces_rebuild(self, mock_exec, mock_build, mock_exists):
+        from bin.run_agent import main
+
+        main()
+        mock_build.assert_called_once()
         mock_exec.assert_called_once()
 
     @patch(

@@ -8,6 +8,7 @@ gets direct TTY access for a regular interactive Claude experience.
 Extra arguments after ``--`` are forwarded to the ``claude`` CLI.
 """
 
+import argparse
 import os
 import sys
 from pathlib import Path
@@ -75,16 +76,40 @@ def build_interactive_docker_command(
     return cmd
 
 
-def main() -> None:
-    # Ensure the Docker image is available
-    if not image_exists():
-        build_image()
+def parse_args(argv: list[str] | None = None) -> tuple[argparse.Namespace, list[str]]:
+    """Parse CLI arguments, returning parsed args and extra claude arguments.
 
-    # Everything after '--' is forwarded to claude
+    Arguments before ``--`` are parsed by argparse; everything after ``--``
+    is forwarded verbatim to the ``claude`` CLI inside the container.
+    """
+    parser = argparse.ArgumentParser(
+        description='Launch an interactive Claude Code session inside the ralph-agent container.',
+    )
+    parser.add_argument(
+        '--build',
+        action='store_true',
+        help='Rebuild Docker image before launching',
+    )
+
+    if argv is None:
+        argv = sys.argv[1:]
+
     extra: list[str] = []
-    if '--' in sys.argv:
-        sep = sys.argv.index('--')
-        extra = sys.argv[sep + 1 :]
+    if '--' in argv:
+        sep = argv.index('--')
+        extra = argv[sep + 1:]
+        argv = argv[:sep]
+
+    args = parser.parse_args(argv)
+    return args, extra
+
+
+def main() -> None:
+    args, extra = parse_args()
+
+    # Ensure the Docker image is available
+    if args.build or not image_exists():
+        build_image()
 
     cmd = build_interactive_docker_command(extra_args=extra or None)
     os.execvp(cmd[0], cmd)
