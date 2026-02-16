@@ -81,7 +81,7 @@ The shared directory is the `shared_dir` — the single location where all run-s
 This design supports:
 - **Multiple simultaneous invocations** — each gets its own shared directory, no collisions
 - **Post-run inspection** — state and logs persist for debugging (not cleaned up like `/tmp`)
-- **Distributable tool** — `uvx --from=dynamic-ralph run-dynamic-ralph` creates `run_ralph/` in whatever repo it's invoked in
+- **Distributable tool** — `uv tool run --from=dynamic-ralph dynamic-ralph` creates `run_ralph/` in whatever repo it's invoked in
 
 One-shot mode uses the same mechanism — it creates a shared directory just like PRD mode. One-shot is simply a run with an ephemeral single-story PRD.
 
@@ -806,7 +806,7 @@ This ensures the system recovers gracefully from power loss, OOM kills, or manua
 `bin/run_dynamic_ralph.py` runs a loop: find assignable stories, spawn agents (up to N in parallel), wait, repeat.
 
 ```
-bin/run_dynamic_ralph.py --agents 3 --prd prd.json
+uv tool run --from=dynamic-ralph dynamic-ralph --agents 3 --prd prd.json
 │
 ├── Validates dependency graph (topological sort, detects cycles)
 ├── Initializes workflow_state.json from prd.json (if not exists)
@@ -840,7 +840,7 @@ This enables filtering by agent, story, or step when debugging parallel executio
 An agent can also be launched without a PRD or story — just a free-form request:
 
 ```bash
-uv run python bin/run_dynamic_ralph.py "Fix the N+1 query in profiles list endpoint"
+uv tool run --from=dynamic-ralph dynamic-ralph "Fix the N+1 query in profiles list endpoint"
 ```
 
 One-shot mode uses the same shared directory mechanism as PRD mode — it creates `run_ralph/<timestamp>_<id>/` with `workflow_state.json`, `scratch.md`, and `scratch_oneshot.md`. The request text becomes the story description for a single-story workflow. The shared directory persists after completion for inspection and debugging.
@@ -874,7 +874,7 @@ The `review` and `final_review` steps are self-review — the same agent (model)
 
 The system should be built bottom-up:
 
-1. **Single agent, one-shot mode** — implement the step execution loop, workflow editing, restart, scratch files, per-step timeouts. Test with `bin/run_dynamic_ralph.py "some task"`. This is the foundation — get it working and polished before moving on.
+1. **Single agent, one-shot mode** — implement the step execution loop, workflow editing, restart, scratch files, per-step timeouts. Test with `uv tool run --from=dynamic-ralph dynamic-ralph "some task"`. This is the foundation — get it working and polished before moving on.
 
 2. **PRD mode, single agent:**
    - **2a. Persistent state + step orchestrator** — add `workflow_state.json` persistence, step-level orchestration for a single story. Test full workflow lifecycle.

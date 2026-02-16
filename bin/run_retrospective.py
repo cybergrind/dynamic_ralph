@@ -2,7 +2,7 @@
 """Retrospective analysis: launch an agent to diagnose a completed run, fix issues, and verify.
 
 Usage:
-    uv run bin/run_retrospective.py <run_dir> [--max-turns N] [--build]
+    uv tool run --from=dynamic-ralph ralph-retro <run_dir> [--max-turns N] [--build]
 
 The script reads a completed run directory (summary.log, workflow_state.json, logs/),
 constructs a 3-phase prompt (diagnose -> fix -> verify), and launches an agent to
@@ -190,7 +190,7 @@ You are analysing a completed Dynamic Ralph run to diagnose failures, implement 
 - Commit your changes with a descriptive message
 
 ### Phase 3: Verify
-- Run: `uv run bin/run_dynamic_ralph.py "verify: <description of what to test>"`
+- Run: `uv tool run --from=dynamic-ralph dynamic-ralph "verify: <description of what to test>"`
 - Wait for it to complete
 - Read the verification run's summary.log and workflow_state.json
 - Report pass/fail results

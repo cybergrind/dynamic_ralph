@@ -9,8 +9,6 @@ from __future__ import annotations
 import subprocess
 from unittest.mock import patch
 
-import pytest
-
 
 # ---------------------------------------------------------------------------
 # TestRalphModeAutoDetect
@@ -46,7 +44,9 @@ class TestRalphModeAutoDetect:
                 # Empty string is falsy, so auto-detect triggers
                 pass
             # Call with no RALPH_MODE set
-            env_backup = patch.dict('os.environ', {k: v for k, v in __import__('os').environ.items() if k != 'RALPH_MODE'}, clear=True)
+            env_backup = patch.dict(
+                'os.environ', {k: v for k, v in __import__('os').environ.items() if k != 'RALPH_MODE'}, clear=True
+            )
             with env_backup, patch('subprocess.run', return_value=fake_result):
                 result = _detect_ralph_mode()
             assert result == 'self'
@@ -65,9 +65,7 @@ class TestRalphModeAutoDetect:
 
     def test_defaults_to_third_party_for_other_repo(self):
         """Non-Ralph remote defaults to third-party."""
-        fake_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout='git@github.com:encode/httpx.git\n'
-        )
+        fake_result = subprocess.CompletedProcess(args=[], returncode=0, stdout='git@github.com:encode/httpx.git\n')
         env = {k: v for k, v in __import__('os').environ.items() if k != 'RALPH_MODE'}
         with patch.dict('os.environ', env, clear=True), patch('subprocess.run', return_value=fake_result):
             from multi_agent.constants import _detect_ralph_mode
@@ -217,9 +215,6 @@ class TestDevFlag:
 
     def test_dev_flag_accepted_by_parser(self):
         """The --dev flag is accepted by the argument parser."""
-        import argparse
-
-        from bin.run_dynamic_ralph import main
 
         # We can't easily test main() without side effects, so just verify
         # the parser accepts --dev by checking the module has the flag

@@ -21,18 +21,29 @@ Dynamic Ralph decomposes user stories into focused, sequential steps and execute
 # Install dependencies
 uv sync
 
+# Install as a tool
+uv tool install -e .
+
 # Build the Docker agent image
-uv run python bin/run_dynamic_ralph.py --build "dummy"
+uv tool run --from=dynamic-ralph dynamic-ralph --build "dummy"
 ```
 
 ## Usage
+
+### Interactive agent
+
+Launch an interactive Claude Code session inside the ralph-agent container:
+
+```bash
+uv tool run --from=dynamic-ralph ralph-agent
+```
 
 ### One-shot mode
 
 Execute a single task through the full workflow:
 
 ```bash
-uv run python bin/run_dynamic_ralph.py "Add a logout button to the settings page"
+uv tool run --from=dynamic-ralph dynamic-ralph "Add a logout button to the settings page"
 ```
 
 ### PRD serial mode
@@ -40,7 +51,7 @@ uv run python bin/run_dynamic_ralph.py "Add a logout button to the settings page
 Execute stories from a PRD file one at a time:
 
 ```bash
-uv run python bin/run_dynamic_ralph.py --prd prd.json
+uv tool run --from=dynamic-ralph dynamic-ralph --prd prd.json
 ```
 
 ### PRD parallel mode
@@ -48,13 +59,13 @@ uv run python bin/run_dynamic_ralph.py --prd prd.json
 Execute stories concurrently with multiple agents:
 
 ```bash
-uv run python bin/run_dynamic_ralph.py --prd prd.json --agents 3
+uv tool run --from=dynamic-ralph dynamic-ralph --prd prd.json --agents 3
 ```
 
 ### Resume a previous run
 
 ```bash
-uv run python bin/run_dynamic_ralph.py --prd prd.json --resume
+uv tool run --from=dynamic-ralph dynamic-ralph --prd prd.json --resume
 ```
 
 ## Configuration
