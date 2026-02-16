@@ -132,7 +132,11 @@ def _write_metadata(shared_dir: Path) -> None:
         text=True,
     ).stdout.strip()
 
+    from multi_agent.constants import RALPH_MODE
+
     ralph_env_vars = {k: v for k, v in os.environ.items() if k.startswith('RALPH_')}
+    # Always include detected RALPH_MODE (may not be in env if auto-detected)
+    ralph_env_vars.setdefault('RALPH_MODE', RALPH_MODE)
 
     metadata = {
         'timestamp': datetime.now(UTC).isoformat(),
