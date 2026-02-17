@@ -45,6 +45,15 @@ End your response with a SUMMARY section (3-5 lines) capturing key findings.""",
 - For simple stories, skip unnecessary steps (e.g., skip test_architecture for migration-only work).
 - Your SUMMARY section at the end of the response is automatically persisted to the story scratch file.
 
+### Quality Principles (from multi_agent_codex)
+- Include code sketches (function signatures, type definitions) to make the plan evaluable — not just prose.
+- Reference specific existing code (function names, class names) — not just file paths.
+- State what breaks and how to migrate. If nothing breaks, say so explicitly.
+- Flag risks honestly: what might fail, what trade-offs you are making.
+- Avoid over-abstraction (one mechanism per concept), premature generalization \
+(name the second use case or simplify), and solving hypothetical problems \
+(cite a concrete current limitation for every change).
+
 ### Workflow Editing
 You may modify remaining steps by writing a JSON edit file (path provided below in the Workflow Editing section). \
 Supported operations: add_after, split, skip, reorder, edit_description.
@@ -85,6 +94,11 @@ End your response with a SUMMARY section (3-5 lines).""",
 - Identify which fixtures exist and which need creation.
 - Your test plan will be used by the coding step.
 
+### Quality Principles (from multi_agent_codex)
+- Name concrete scenarios with expected inputs and outputs — not generic "test the feature."
+- Each test must trace to a specific acceptance criterion or a concrete edge case.
+- Test observable behavior, not implementation details (internal method calls, private state).
+
 ### Workflow Editing
 You may adjust strategy if architecture needs revision, or split testing phases.
 
@@ -105,6 +119,13 @@ End your response with a SUMMARY section (3-5 lines).""",
 (documented in story scratch from context_gathering). \
 If not documented, run `git log --oneline -20` to infer it first.
 - If you discover unexpected complexity, use workflow editing to add steps.
+
+### Quality Principles (from multi_agent_codex)
+- Implement exactly what the plan requires — no extra abstractions, config options, or extensibility \
+beyond what was planned.
+- Don't generalize prematurely: if there is one case, write for one case. \
+Name the second use case before adding indirection.
+- If a change breaks existing behavior, include migration or backward compatibility.
 
 ### Workflow Editing
 You may add additional coding rounds or other steps.

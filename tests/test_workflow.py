@@ -976,6 +976,21 @@ class TestPrompts:
         assert '/run/shared/scratch_US-001.md' in prompt
         assert '/run/shared/scratch.md' in prompt
 
+    def test_coding_step_includes_quality_principles(self):
+        instructions = STEP_INSTRUCTIONS[StepType.coding]
+        assert '### Quality Principles (from multi_agent_codex)' in instructions
+        # Guard against over-engineering beyond the plan
+        assert 'no extra abstractions' in instructions
+        # Guard against premature generalization
+        assert "Don't generalize prematurely" in instructions
+        # Guard on migration for breaking changes
+        assert 'migration or backward compatibility' in instructions
+        # Subsection is between Instructions and Workflow Editing
+        instr_pos = instructions.index('### Instructions')
+        quality_pos = instructions.index('### Quality Principles')
+        editing_pos = instructions.index('### Workflow Editing')
+        assert instr_pos < quality_pos < editing_pos
+
 
 # ===========================================================================
 # filelock.py
