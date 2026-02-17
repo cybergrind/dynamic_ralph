@@ -68,6 +68,22 @@ uv tool run --from=dynamic-ralph dynamic-ralph --prd prd.json --agents 3
 uv tool run --from=dynamic-ralph dynamic-ralph --prd prd.json --resume
 ```
 
+## Docker Host Path Resolution
+
+When running inside a container, Dynamic Ralph needs to resolve the **host** paths
+for `~/.claude` and `~/.config/claude` (Docker volume mounts are resolved by the
+daemon on the host, not inside the container). Claude Code writes the real host
+path to `~/.claude/full_path` (e.g. `/home/kpi/.claude`). If this file exists,
+Dynamic Ralph reads it and derives both mount paths from it:
+
+```
+~/.claude/full_path  →  /home/kpi/.claude        (mount as /home/agent/.claude)
+                     →  /home/kpi/.config/claude  (mount as /home/agent/.config/claude)
+```
+
+When `~/.claude/full_path` is absent (running directly on the host), `Path.home()`
+is used as the fallback.
+
 ## Configuration
 
 Dynamic Ralph uses environment variables for project-specific configuration:

@@ -11,10 +11,9 @@ Extra arguments after ``--`` are forwarded to the ``claude`` CLI.
 import argparse
 import os
 import sys
-from pathlib import Path
 
 from multi_agent.constants import GIT_EMAIL, RALPH_IMAGE, RALPH_MODE, get_git_author_identity
-from multi_agent.docker import build_image, docker_sock_gid, image_exists
+from multi_agent.docker import build_image, docker_sock_gid, host_claude_paths, image_exists
 
 
 def build_interactive_docker_command(
@@ -28,9 +27,7 @@ def build_interactive_docker_command(
         workspace = os.getcwd()
 
     author_name, author_email = get_git_author_identity()
-    home = Path.home()
-    claude_dir = home / '.claude'
-    config_claude = home / '.config' / 'claude'
+    claude_dir, config_claude = host_claude_paths()
 
     cmd: list[str] = [
         'docker',
@@ -97,7 +94,7 @@ def parse_args(argv: list[str] | None = None) -> tuple[argparse.Namespace, list[
     extra: list[str] = []
     if '--' in argv:
         sep = argv.index('--')
-        extra = argv[sep + 1:]
+        extra = argv[sep + 1 :]
         argv = argv[:sep]
 
     args = parser.parse_args(argv)

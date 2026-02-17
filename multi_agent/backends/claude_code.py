@@ -9,12 +9,11 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
 from typing import Iterator
 
 from multi_agent.backend import AgentEvent, AgentResult
 from multi_agent.constants import GIT_EMAIL, RALPH_IMAGE, RALPH_MODE, get_git_author_identity
-from multi_agent.docker import build_image, docker_sock_gid, image_exists
+from multi_agent.docker import build_image, docker_sock_gid, host_claude_paths, image_exists
 
 
 class ClaudeCodeBackend:
@@ -63,8 +62,7 @@ class ClaudeCodeBackend:
 
         author_name, author_email = get_git_author_identity()
         compose_project = f'ralph_agent_{agent_id}'
-        claude_config = Path.home() / '.claude'
-        host_config_claude = Path.home() / '.config' / 'claude'
+        claude_config, host_config_claude = host_claude_paths()
 
         return [
             'docker',
