@@ -54,6 +54,13 @@ End your response with a SUMMARY section (3-5 lines) capturing key findings.""",
 (name the second use case or simplify), and solving hypothetical problems \
 (cite a concrete current limitation for every change).
 
+### Required Output Format
+Your response MUST include these sections so downstream steps can consume the plan directly:
+- **## FILES TO MODIFY** — each file path with a one-line description of the change.
+- **## IMPLEMENTATION ORDER** — numbered steps showing the sequence of changes.
+- **## KEY DECISIONS** — approach rationale, edge cases considered, constraints.
+- **## SUMMARY** — 3-5 lines for quick reference.
+
 ### Workflow Editing
 You may modify remaining steps by writing a JSON edit file (path provided below in the Workflow Editing section). \
 Supported operations: add_after, split, skip, reorder, edit_description.
@@ -65,11 +72,14 @@ End your response with a SUMMARY section (3-5 lines).""",
     StepType.architecture: """\
 ## Step: Architecture
 
-**You receive:** Notes from context_gathering + planning, scratch files.
+**You receive:** Full planning output (files to modify, implementation order, key decisions), \
+context_gathering notes, scratch files.
 **You produce:** Architecture notes: new/modified files, schema changes, migration needs, \
 import dependencies, layer boundary compliance.
 
 ### Instructions
+- The 'Context from Prior Steps' section contains the full planning output with the proposed \
+file list and implementation approach. Use it as your starting point — do not re-derive the plan.
 - Design the technical structure.
 - Verify it fits within `api -> core -> common` layering.
 - If migration is needed, note it explicitly.
@@ -85,10 +95,13 @@ End your response with a SUMMARY section (3-5 lines).""",
     StepType.test_architecture: """\
 ## Step: Test Architecture
 
-**You receive:** Notes from architecture, existing test patterns, scratch files.
+**You receive:** Full architecture output (file layout, schema changes, structural decisions), \
+existing test patterns, scratch files.
 **You produce:** Test plan: test files, test classes, key scenarios, fixtures needed, edge cases.
 
 ### Instructions
+- The 'Context from Prior Steps' section contains the full architecture output. Use it to align \
+test structure with the planned file layout and schema changes.
 - Design tests independently from implementation.
 - Cover all acceptance criteria.
 - Identify which fixtures exist and which need creation.
@@ -109,10 +122,14 @@ End your response with a SUMMARY section (3-5 lines).""",
     StepType.coding: """\
 ## Step: Coding
 
-**You receive:** Notes from architecture + test_architecture, story scratch file.
+**You receive:** Full output from planning, architecture, and test_architecture steps, \
+story scratch file.
 **You produce:** Modified/created files committed to git.
 
 ### Instructions
+- The 'Context from Prior Steps' section contains the full planning output with files to modify \
+and implementation order, the full architecture output with structural decisions, and the full \
+test plan. Follow these plans directly — do NOT re-explore or re-derive what prior steps already decided.
 - Implement production code and tests according to the plans from prior steps.
 - Use `uv run` for all Python commands.
 - Commit your changes following the repo's commit convention \
@@ -237,18 +254,16 @@ def compose_step_prompt(
     step: Step,
     global_scratch: str,
     story_scratch: str,
-    base_instructions: str,
     shared_dir: Path,
 ) -> str:
     """Build the full prompt for a step invocation.
 
     Assembles:
-    1. Base agent instructions (project conventions)
-    2. Story context (description, acceptance criteria)
-    3. Step-specific instructions
-    4. Notes from all completed prior steps
-    5. Scratch file contents
-    6. Current step description (may be customized by workflow edits)
+    1. Story context (description, acceptance criteria)
+    2. Step-specific instructions
+    3. Notes from all completed prior steps
+    4. Scratch file contents
+    5. Current step description (may be customized by workflow edits)
     """
     parts: list[str] = []
 
@@ -373,14 +388,23 @@ def _format_remaining_steps(story: StoryWorkflow, current_step: Step) -> str:
     return '\n'.join(lines)
 
 
+FULL_OUTPUT_STEP_TYPES = {StepType.planning, StepType.architecture, StepType.test_architecture}
+
+
 def _collect_prior_notes(story: StoryWorkflow, current_step: Step) -> str:
     """Collect notes from all completed steps before the current step."""
     lines: list[str] = []
     for step in story.steps:
         if step.id == current_step.id:
             break
-        if step.status == StepStatus.completed and step.notes:
+        if step.status == StepStatus.completed:
+            if step.type in FULL_OUTPUT_STEP_TYPES and step.full_output is not None:
+                content = step.full_output
+            elif step.notes:
+                content = step.notes
+            else:
+                continue
             lines.append(f'### {step.type} ({step.id})')
-            lines.append(step.notes)
+            lines.append(content)
             lines.append('')
     return '\n'.join(lines)

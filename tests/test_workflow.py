@@ -876,27 +876,27 @@ class TestPrompts:
     def test_compose_step_prompt_contains_story(self):
         story = _make_story()
         step = story.steps[0]
-        prompt = compose_step_prompt(story, step, '', '', '', shared_dir=Path('/test/shared'))
+        prompt = compose_step_prompt(story, step, '', '', shared_dir=Path('/test/shared'))
         assert 'Test story' in prompt
         assert 'US-001' in prompt
 
     def test_compose_step_prompt_contains_acceptance_criteria(self):
         story = _make_story()
         step = story.steps[0]
-        prompt = compose_step_prompt(story, step, '', '', '', shared_dir=Path('/test/shared'))
+        prompt = compose_step_prompt(story, step, '', '', shared_dir=Path('/test/shared'))
         assert 'AC-1' in prompt
         assert 'AC-2' in prompt
 
     def test_compose_step_prompt_contains_step_instructions(self):
         story = _make_story()
         step = story.steps[0]  # context_gathering
-        prompt = compose_step_prompt(story, step, '', '', '', shared_dir=Path('/test/shared'))
+        prompt = compose_step_prompt(story, step, '', '', shared_dir=Path('/test/shared'))
         assert 'Context Gathering' in prompt
 
     def test_context_gathering_includes_commit_convention_discovery(self):
         story = _make_story()
         step = story.steps[0]  # context_gathering
-        prompt = compose_step_prompt(story, step, '', '', '', shared_dir=Path('/test/shared'))
+        prompt = compose_step_prompt(story, step, '', '', shared_dir=Path('/test/shared'))
         assert 'git log --oneline' in prompt
         assert 'commit' in prompt.lower()
         assert 'convention' in prompt.lower()
@@ -908,13 +908,13 @@ class TestPrompts:
         story.steps[0].status = StepStatus.completed
         story.steps[0].notes = 'Found relevant models in profiles/models.py'
         step = story.steps[1]  # planning
-        prompt = compose_step_prompt(story, step, '', '', '', shared_dir=Path('/test/shared'))
+        prompt = compose_step_prompt(story, step, '', '', shared_dir=Path('/test/shared'))
         assert 'Found relevant models' in prompt
 
     def test_compose_step_prompt_includes_scratch(self):
         story = _make_story()
         step = story.steps[0]
-        prompt = compose_step_prompt(story, step, 'Global note', 'Story note', '', shared_dir=Path('/test/shared'))
+        prompt = compose_step_prompt(story, step, 'Global note', 'Story note', shared_dir=Path('/test/shared'))
         assert 'Global note' in prompt
         assert 'Story note' in prompt
 
@@ -922,13 +922,13 @@ class TestPrompts:
         story = _make_story()
         # planning step allows editing
         step = story.steps[1]
-        prompt = compose_step_prompt(story, step, '', '', '', shared_dir=Path('/test/shared'))
+        prompt = compose_step_prompt(story, step, '', '', shared_dir=Path('/test/shared'))
         assert 'workflow_edits' in prompt
 
     def test_compose_step_prompt_editing_section_shows_json_schema(self):
         story = _make_story()
         step = story.steps[1]  # planning — allows editing
-        prompt = compose_step_prompt(story, step, '', '', '', shared_dir=Path('/test/shared'))
+        prompt = compose_step_prompt(story, step, '', '', shared_dir=Path('/test/shared'))
         assert 'target_step_id' in prompt
         assert '"operation": "skip"' in prompt
         assert '"operation": "add_after"' in prompt
@@ -938,14 +938,14 @@ class TestPrompts:
         story = _make_story()
         # context_gathering does not allow editing
         step = story.steps[0]
-        prompt = compose_step_prompt(story, step, '', '', '', shared_dir=Path('/test/shared'))
+        prompt = compose_step_prompt(story, step, '', '', shared_dir=Path('/test/shared'))
         assert 'workflow_edits/US-001.json' not in prompt
 
     def test_compose_step_prompt_lists_remaining_step_ids(self):
         story = _make_story()
         # planning (step-002) allows editing; steps 003-010 are pending after it
         step = story.steps[1]
-        prompt = compose_step_prompt(story, step, '', '', '', shared_dir=Path('/test/shared'))
+        prompt = compose_step_prompt(story, step, '', '', shared_dir=Path('/test/shared'))
         assert 'Remaining Steps' in prompt
         for s in story.steps[2:]:
             assert s.id in prompt
@@ -971,7 +971,7 @@ class TestPrompts:
         story = _make_story()
         step = story.steps[0]  # context_gathering (non-editable step)
         shared = Path('/run/shared')
-        prompt = compose_step_prompt(story, step, '', '', '', shared_dir=shared)
+        prompt = compose_step_prompt(story, step, '', '', shared_dir=shared)
         assert '## Scratch Files' in prompt
         assert '/run/shared/scratch_US-001.md' in prompt
         assert '/run/shared/scratch.md' in prompt
@@ -990,6 +990,60 @@ class TestPrompts:
         quality_pos = instructions.index('### Quality Principles')
         editing_pos = instructions.index('### Workflow Editing')
         assert instr_pos < quality_pos < editing_pos
+
+    def test_compose_step_prompt_includes_full_output_from_planning(self):
+        story = _make_story()
+        # Mark planning step as completed with both notes and full_output
+        planning_step = story.steps[1]  # step-002 planning
+        planning_step.status = StepStatus.completed
+        planning_step.notes = 'Short summary of the plan'
+        planning_step.full_output = 'Full detailed planning output with all reasoning'
+        # Also complete context_gathering so planning is a prior step
+        story.steps[0].status = StepStatus.completed
+        story.steps[0].notes = 'Context notes'
+        # Compose prompt for coding step (step-005, index 4)
+        coding_step = story.steps[4]
+        prompt = compose_step_prompt(story, coding_step, '', '', shared_dir=Path('/test/shared'))
+        assert 'Full detailed planning output with all reasoning' in prompt
+        assert 'Short summary of the plan' not in prompt
+
+    def test_compose_step_prompt_falls_back_to_notes_when_full_output_none(self):
+        story = _make_story()
+        # Mark planning step as completed with notes but no full_output
+        planning_step = story.steps[1]  # step-002 planning
+        planning_step.status = StepStatus.completed
+        planning_step.notes = 'Short summary of the plan'
+        planning_step.full_output = None
+        # Also complete context_gathering
+        story.steps[0].status = StepStatus.completed
+        story.steps[0].notes = 'Context notes'
+        # Compose prompt for coding step
+        coding_step = story.steps[4]
+        prompt = compose_step_prompt(story, coding_step, '', '', shared_dir=Path('/test/shared'))
+        assert 'Short summary of the plan' in prompt
+
+    def test_planning_step_includes_required_output_format(self):
+        instructions = STEP_INSTRUCTIONS[StepType.planning]
+        assert 'FILES TO MODIFY' in instructions
+        assert 'IMPLEMENTATION ORDER' in instructions
+        assert 'KEY DECISIONS' in instructions
+        assert 'SUMMARY' in instructions
+
+    def test_planning_step_includes_quality_principles(self):
+        instructions = STEP_INSTRUCTIONS[StepType.planning]
+        assert '### Quality Principles (from multi_agent_codex)' in instructions
+        assert 'code sketches' in instructions
+        assert 'Flag risks honestly' in instructions
+
+    def test_coding_step_you_receive_mentions_planning(self):
+        instructions = STEP_INSTRUCTIONS[StepType.coding]
+        # Extract the 'You receive' line
+        for line in instructions.splitlines():
+            if 'You receive' in line:
+                assert 'planning' in line.lower(), f"'You receive' line should mention planning: {line}"
+                break
+        else:
+            raise AssertionError("No 'You receive' line found in coding instructions")
 
 
 # ===========================================================================
@@ -1120,6 +1174,24 @@ class TestFinishedAt:
 
         reloaded = load_state(state_path)
         assert reloaded.finished_at == '2025-06-01T12:00:00+00:00'
+
+
+# ===========================================================================
+# Full output field (models.py)
+# ===========================================================================
+
+
+class TestFullOutput:
+    def test_backward_compatible_with_missing_field(self):
+        """Step JSON without full_output loads fine (defaults to None)."""
+        data = {
+            'id': 'step-001',
+            'type': 'coding',
+            'status': 'pending',
+            'description': 'Do something',
+        }
+        step = Step.model_validate(data)
+        assert step.full_output is None
 
 
 # ===========================================================================

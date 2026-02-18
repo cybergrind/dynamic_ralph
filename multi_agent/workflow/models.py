@@ -64,6 +64,7 @@ class Step(BaseModel):
     input_tokens: int | None = None
     output_tokens: int | None = None
     log_file: str | None = None
+    full_output: str | None = None
 
 
 # ---------------------------------------------------------------------------

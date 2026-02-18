@@ -19,7 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from multi_agent.backend import AgentResult, get_backend
-from multi_agent.prompts import BASE_AGENT_INSTRUCTIONS, build_system_prompt
+from multi_agent.prompts import build_system_prompt
 from multi_agent.stream import display_agent_event
 from multi_agent.workflow.editing import (
     EditValidationError,
@@ -35,7 +35,7 @@ from multi_agent.workflow.models import (
     StepStatus,
     StoryWorkflow,
 )
-from multi_agent.workflow.prompts import compose_step_prompt
+from multi_agent.workflow.prompts import FULL_OUTPUT_STEP_TYPES, compose_step_prompt
 from multi_agent.workflow.scratch import (
     append_story_scratch,
     read_global_scratch,
@@ -377,7 +377,6 @@ def execute_step(
         step=step,
         global_scratch=global_scratch,
         story_scratch=story_scratch,
-        base_instructions=BASE_AGENT_INSTRUCTIONS,
         shared_dir=shared_dir,
     )
 
@@ -416,9 +415,10 @@ def execute_step(
     # ---- (g) Extract summary --------------------------------------------------
     summary = _extract_summary(agent_result.final_response)
     step.notes = summary
+    step.full_output = agent_result.final_response
 
     # ---- (g2) Persist summary to story scratch file ---------------------------
-    if summary:
+    if summary and step.type not in FULL_OUTPUT_STEP_TYPES:
         append_story_scratch(
             story_id,
             f'\n### {step.type} ({step_id})\n{summary}\n',
@@ -671,6 +671,7 @@ def _persist_step(
             persisted_step.completed_at = step.completed_at
             persisted_step.git_sha_at_start = step.git_sha_at_start
             persisted_step.notes = step.notes
+            persisted_step.full_output = step.full_output
             persisted_step.error = step.error
             persisted_step.cost_usd = step.cost_usd
             persisted_step.input_tokens = step.input_tokens
