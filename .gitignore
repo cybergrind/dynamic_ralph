@@ -28,7 +28,12 @@ Thumbs.db
 # Scratch/working documents
 docs/scratches/
 
+# other
+/third_party
+
 # Dynamic Ralph runtime artifacts
+working/
+docs/decisions
 run_ralph/
 prd.json
 worktrees/
