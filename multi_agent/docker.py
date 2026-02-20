@@ -4,10 +4,27 @@ import os
 import subprocess
 from pathlib import Path
 
-from multi_agent.constants import RALPH_IMAGE
+from multi_agent.constants import RALPH_IMAGE, RALPH_MODE
 
 
 DOCKERFILE_PATH = os.environ.get('RALPH_DOCKERFILE', 'docker/Dockerfile')
+
+
+def _ralph_source_dir() -> Path:
+    """Return the root of the ralph source tree for Docker build context."""
+    if RALPH_MODE == 'self':
+        return Path.cwd()
+    candidate = Path(__file__).resolve().parent.parent
+    dockerfile = candidate / 'docker' / 'Dockerfile'
+    if not dockerfile.is_file():
+        raise FileNotFoundError(
+            f'Cannot locate docker/Dockerfile relative to {candidate}. '
+            f'RALPH_MODE={RALPH_MODE}. '
+            f'Ralph source tree not found. If installed via uv tool install, '
+            f'ensure non-Python files are included in the package, or use '
+            f'editable install: uv tool install -e /path/to/dynamic_ralph'
+        )
+    return candidate
 
 
 def image_exists(image: str = RALPH_IMAGE) -> bool:
@@ -19,9 +36,11 @@ def image_exists(image: str = RALPH_IMAGE) -> bool:
 
 
 def build_image(image: str = RALPH_IMAGE) -> None:
-    print(f'==> Building {image}...')
+    context = _ralph_source_dir()
+    dockerfile = str(context / DOCKERFILE_PATH)
+    print(f'==> Building {image} (context={context})...')
     subprocess.run(
-        ['docker', 'build', '-t', image, '-f', DOCKERFILE_PATH, '.'],
+        ['docker', 'build', '-t', image, '-f', dockerfile, str(context)],
         check=True,
     )
 

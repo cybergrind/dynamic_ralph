@@ -1,13 +1,17 @@
 """Tests for third-party mode support.
 
 Covers RALPH_MODE auto-detection, validation, system prompt building,
-Docker command RALPH_MODE propagation, and CLI --dev flag.
+Docker command RALPH_MODE propagation, CLI --dev flag, and Docker build
+context resolution.
 """
 
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 
 # ---------------------------------------------------------------------------
@@ -223,3 +227,65 @@ class TestDevFlag:
 
         source = open(mod.__file__).read()
         assert "'--dev'" in source or '"--dev"' in source
+
+
+# ---------------------------------------------------------------------------
+# TestRalphSourceDir
+# ---------------------------------------------------------------------------
+
+
+class TestRalphSourceDir:
+    """Test _ralph_source_dir() Docker build context resolution."""
+
+    def test_self_mode_returns_cwd(self):
+        """In self mode, _ralph_source_dir() returns Path.cwd()."""
+        with patch('multi_agent.docker.RALPH_MODE', 'self'):
+            from multi_agent.docker import _ralph_source_dir
+
+            result = _ralph_source_dir()
+        assert result == Path.cwd()
+
+    def test_third_party_mode_returns_package_root(self, tmp_path):
+        """In third-party mode, returns parent.parent of __file__ when docker/Dockerfile exists."""
+        # Create a fake package layout: <root>/multi_agent/docker.py
+        fake_root = tmp_path / 'ralph_root'
+        (fake_root / 'docker').mkdir(parents=True)
+        (fake_root / 'docker' / 'Dockerfile').touch()
+
+        with (
+            patch('multi_agent.docker.RALPH_MODE', 'third-party'),
+            patch('multi_agent.docker.Path') as mock_path_cls,
+        ):
+            # Make Path(__file__).resolve().parent.parent return fake_root
+            mock_file_path = mock_path_cls.return_value
+            mock_resolved = mock_file_path.resolve.return_value
+            mock_parent = mock_resolved.parent
+            mock_parent.parent = fake_root
+
+            # Make Path.cwd() still work (not used in this branch)
+            mock_path_cls.cwd.return_value = Path.cwd()
+
+            from multi_agent.docker import _ralph_source_dir
+
+            result = _ralph_source_dir()
+        assert result == fake_root
+
+    def test_third_party_mode_raises_when_dockerfile_missing(self, tmp_path):
+        """In third-party mode, raises FileNotFoundError when docker/Dockerfile is missing."""
+        # Create a fake root WITHOUT docker/Dockerfile
+        fake_root = tmp_path / 'no_docker'
+        fake_root.mkdir()
+
+        with (
+            patch('multi_agent.docker.RALPH_MODE', 'third-party'),
+            patch('multi_agent.docker.Path') as mock_path_cls,
+        ):
+            mock_file_path = mock_path_cls.return_value
+            mock_resolved = mock_file_path.resolve.return_value
+            mock_parent = mock_resolved.parent
+            mock_parent.parent = fake_root
+
+            from multi_agent.docker import _ralph_source_dir
+
+            with pytest.raises(FileNotFoundError, match=r'Cannot locate docker/Dockerfile'):
+                _ralph_source_dir()
