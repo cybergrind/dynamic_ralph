@@ -56,9 +56,7 @@ RUN su - agent -c "git config --global --add safe.directory /workspace"
 
 # Ralph's own instructions baked into /opt/ralph (for third-party repo mode)
 COPY CLAUDE.md /opt/ralph/CLAUDE.md
-COPY docs/dynamic_ralph.md /opt/ralph/docs/dynamic_ralph.md
-COPY docs/ralph.md /opt/ralph/docs/ralph.md
-COPY docs/identities/ /opt/ralph/docs/identities/
+COPY docs/ /opt/ralph/docs/
 RUN chown -R agent:agent /opt/ralph
 
 USER agent
