@@ -167,6 +167,36 @@ class TestBuildSystemPrompt:
             result = build_system_prompt()
         assert result == BASE_AGENT_INSTRUCTIONS
 
+    def test_third_party_mode_includes_docs_path(self):
+        """In third-party mode, prompt includes /opt/ralph/docs/ path reference."""
+        with (
+            patch('multi_agent.prompts.RALPH_MODE', 'third-party'),
+            patch('multi_agent.prompts._RALPH_CLAUDE_MD_CONTENT', 'Test conventions'),
+        ):
+            from multi_agent.prompts import build_system_prompt
+
+            result = build_system_prompt()
+        assert '/opt/ralph/docs/' in result
+
+    def test_third_party_mode_includes_do_not_modify(self):
+        """In third-party mode, prompt includes 'Do not modify' boundary."""
+        with (
+            patch('multi_agent.prompts.RALPH_MODE', 'third-party'),
+            patch('multi_agent.prompts._RALPH_CLAUDE_MD_CONTENT', 'Test conventions'),
+        ):
+            from multi_agent.prompts import build_system_prompt
+
+            result = build_system_prompt()
+        assert 'Do not modify' in result
+
+    def test_self_mode_excludes_docs_path(self):
+        """In self mode, prompt does NOT include /opt/ralph/docs/ path reference."""
+        with patch('multi_agent.prompts.RALPH_MODE', 'self'):
+            from multi_agent.prompts import build_system_prompt
+
+            result = build_system_prompt()
+        assert '/opt/ralph/docs/' not in result
+
 
 # ---------------------------------------------------------------------------
 # TestDockerCommandRalphMode

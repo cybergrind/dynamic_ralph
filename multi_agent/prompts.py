@@ -18,16 +18,34 @@ def _load_ralph_claude_md() -> str:
 
 _RALPH_CLAUDE_MD_CONTENT: str = _load_ralph_claude_md()
 
+_THIRD_PARTY_DOCS_GUIDANCE = """
+## Path Reference (Third-Party Mode)
+
+- **Target project code:** `/workspace/` (your working directory)
+- **Ralph workflow docs:** `/opt/ralph/docs/` (design specs, process docs)
+- **Ralph identity files:** `/opt/ralph/docs/identities/` (agent identity definitions)
+- **Ralph project conventions:** Included above as "Ralph Workflow Conventions"
+
+Do not modify files under `/opt/ralph/`. Focus on `/workspace/` for the target
+project. Consult `/opt/ralph/docs/` only when you need Ralph workflow or process
+documentation.
+"""
+
 
 def build_system_prompt() -> str:
     """Build the full system prompt for agent invocations.
 
     Self mode: just BASE_AGENT_INSTRUCTIONS (unchanged behavior).
-    Third-party mode: prepend Ralph's CLAUDE.md as workflow conventions.
+    Third-party mode: prepend Ralph's CLAUDE.md as workflow conventions,
+    followed by /opt/ralph/ path guidance.
     """
     if RALPH_MODE != 'third-party' or not _RALPH_CLAUDE_MD_CONTENT:
         return BASE_AGENT_INSTRUCTIONS
-    return f'## Ralph Workflow Conventions\n\n{_RALPH_CLAUDE_MD_CONTENT}\n\n{BASE_AGENT_INSTRUCTIONS}'
+    return (
+        f'## Ralph Workflow Conventions\n\n{_RALPH_CLAUDE_MD_CONTENT}\n\n'
+        f'{_THIRD_PARTY_DOCS_GUIDANCE}\n\n'
+        f'{BASE_AGENT_INSTRUCTIONS}'
+    )
 
 
 BASE_AGENT_INSTRUCTIONS = """\
