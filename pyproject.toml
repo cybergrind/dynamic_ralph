@@ -14,6 +14,12 @@ dynamic-ralph = 'bin.run_dynamic_ralph:main'
 ralph-agent = 'bin.run_agent:main'
 ralph-retro = 'bin.run_retrospective:main'
 
+[tool.setuptools]
+include-package-data = true
+# NOTE: MANIFEST.in ensures CLAUDE.md, docker/, and docs/ are included in the sdist,
+# but wheels only contain Python packages. For Docker builds (_ralph_source_dir),
+# use an editable install: uv tool install -e .
+
 [tool.setuptools.packages.find]
 include = ['multi_agent*', 'bin']
 
