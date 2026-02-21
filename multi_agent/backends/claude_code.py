@@ -189,6 +189,7 @@ class ClaudeCodeBackend:
     def extract_result(self, events: list[AgentEvent], exit_code: int) -> AgentResult:
         result = AgentResult(exit_code=exit_code)
         last_assistant_text = ''
+        all_assistant_parts: list[str] = []
 
         for ev in events:
             if ev.kind == 'result':
@@ -200,8 +201,10 @@ class ClaudeCodeBackend:
                 result.completion_status = raw.get('subtype', 'unknown')
             elif ev.kind == 'assistant':
                 last_assistant_text = ev.text
+                all_assistant_parts.append(ev.text)
 
         result.final_response = last_assistant_text
+        result.full_response = '\n\n'.join(all_assistant_parts)
         return result
 
 

@@ -63,6 +63,7 @@ class TestAgentResult:
         assert r.output_tokens == 0
         assert r.completion_status == 'unknown'
         assert r.final_response == ''
+        assert r.full_response == ''
         assert r.timed_out is False
 
 
@@ -337,6 +338,7 @@ class TestClaudeCodeExtractResult:
         assert result.output_tokens == 500
         assert result.completion_status == 'end_turn'
         assert result.final_response == 'I did the thing'
+        assert result.full_response == 'I did the thing'
 
     def test_no_result_event(self):
         backend = ClaudeCodeBackend()
@@ -346,6 +348,7 @@ class TestClaudeCodeExtractResult:
         result = backend.extract_result(events, exit_code=1)
         assert result.exit_code == 1
         assert result.final_response == 'partial output'
+        assert result.full_response == 'partial output'
         assert result.num_turns == 0
 
     def test_empty_events(self):
@@ -353,6 +356,22 @@ class TestClaudeCodeExtractResult:
         result = backend.extract_result([], exit_code=0)
         assert result.exit_code == 0
         assert result.final_response == ''
+        assert result.full_response == ''
+
+    def test_multiple_assistant_blocks(self):
+        backend = ClaudeCodeBackend()
+        events = [
+            AgentEvent(kind='assistant', text='First response'),
+            AgentEvent(kind='tool_use', text='Bash: ls'),
+            AgentEvent(kind='tool_result', text='file.py'),
+            AgentEvent(kind='assistant', text='Second response'),
+            AgentEvent(kind='tool_use', text='Bash: cat file.py'),
+            AgentEvent(kind='tool_result', text='contents'),
+            AgentEvent(kind='assistant', text='Third response'),
+        ]
+        result = backend.extract_result(events, exit_code=0)
+        assert result.final_response == 'Third response'
+        assert result.full_response == 'First response\n\nSecond response\n\nThird response'
 
 
 # ---------------------------------------------------------------------------

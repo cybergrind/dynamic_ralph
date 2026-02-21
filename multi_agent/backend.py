@@ -73,6 +73,7 @@ class AgentResult:
     output_tokens: int = 0
     completion_status: str = 'unknown'
     final_response: str = ''
+    full_response: str = ''
     timed_out: bool = False
 
 
