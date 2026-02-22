@@ -10,7 +10,6 @@ from multi_agent.workflow.models import Step, StepStatus, StepType
 # ---------------------------------------------------------------------------
 
 STEP_TIMEOUTS: dict[StepType, int] = {
-    StepType.context_gathering: 900,
     StepType.planning: 600,
     StepType.architecture: 600,
     StepType.test_architecture: 600,
@@ -27,7 +26,6 @@ STEP_TIMEOUTS: dict[StepType, int] = {
 # ---------------------------------------------------------------------------
 
 STEP_ALLOWS_EDITING: dict[StepType, bool] = {
-    StepType.context_gathering: False,
     StepType.planning: True,
     StepType.architecture: True,
     StepType.test_architecture: True,
@@ -43,7 +41,7 @@ STEP_ALLOWS_EDITING: dict[StepType, bool] = {
 # Steps that cannot be removed or skipped
 # ---------------------------------------------------------------------------
 
-MANDATORY_STEPS: set[StepType] = {StepType.linting, StepType.final_review}
+MANDATORY_STEPS: set[StepType] = {}
 
 # ---------------------------------------------------------------------------
 # Workflow limits
@@ -57,16 +55,15 @@ MAX_RESTARTS_PER_STEP: int = 3
 # ---------------------------------------------------------------------------
 
 _DEFAULT_STEPS: list[tuple[str, StepType, str]] = [
-    ('step-001', StepType.context_gathering, 'Explore codebase, DB schema, docs, and related code'),
-    ('step-002', StepType.planning, 'Produce implementation plan based on gathered context'),
-    ('step-003', StepType.architecture, 'Design code structure and identify files to modify'),
-    ('step-004', StepType.test_architecture, 'Design test strategy and identify test files'),
-    ('step-005', StepType.coding, 'Implement the changes'),
-    ('step-006', StepType.linting, 'Run formatters and lint checks'),
-    ('step-007', StepType.initial_testing, 'Run tests and identify failures'),
-    ('step-008', StepType.review, 'Self-review against acceptance criteria'),
-    ('step-009', StepType.prune_tests, 'Remove redundant tests'),
-    ('step-010', StepType.final_review, 'Final verification and commit'),
+    ('step-001', StepType.planning, 'Produce implementation plan based on gathered context'),
+    ('step-002', StepType.architecture, 'Design code structure and identify files to modify'),
+    ('step-003', StepType.test_architecture, 'Design test strategy and identify test files'),
+    ('step-004', StepType.coding, 'Implement the changes'),
+    ('step-005', StepType.linting, 'Run formatters and lint checks'),
+    ('step-006', StepType.initial_testing, 'Run tests and identify failures'),
+    ('step-007', StepType.review, 'Self-review against acceptance criteria'),
+    ('step-008', StepType.prune_tests, 'Remove redundant tests'),
+    ('step-009', StepType.final_review, 'Final verification and commit'),
 ]
 
 

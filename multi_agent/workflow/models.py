@@ -14,7 +14,6 @@ from pydantic import BaseModel, Field
 
 
 class StepType(StrEnum):
-    context_gathering = 'context_gathering'
     planning = 'planning'
     architecture = 'architecture'
     test_architecture = 'test_architecture'

@@ -12,8 +12,8 @@ from multi_agent.workflow.models import Step, StepStatus, StepType, StoryWorkflo
 # ---------------------------------------------------------------------------
 
 STEP_INSTRUCTIONS: dict[StepType, str] = {
-    StepType.context_gathering: """\
-## Step: Context Gathering
+    StepType.planning: """\
+## Preparation and Context Gathering
 
 **You receive:** Story description, acceptance criteria, global scratch file, story scratch file.
 **You produce:** Context summary listing: relevant files with paths, DB models/schemas, \
@@ -25,15 +25,8 @@ existing patterns, related tests, current behavior.
 - Identify: target files, related models, existing test patterns, current behavior.
 - Run `git log --oneline origin/main -30` (or the repo's default branch) and analyze the output \
 to infer the commit message convention: format pattern, prefix vocabulary, casing rules, and suffix conventions.
-- Document the discovered commit convention as a structured section in your SUMMARY \
-so it persists to the story scratch file for all later steps.
-- Your SUMMARY section at the end of the response is automatically persisted to the story scratch file.
+- Document the discovered commit convention as a structured section in your SUMMARY.
 
-### Exit Criteria
-All areas relevant to the story are identified and documented.
-
-End your response with a SUMMARY section (3-5 lines) capturing key findings.""",
-    StepType.planning: """\
 ## Step: Planning
 
 **You receive:** Notes from context_gathering, story acceptance criteria, scratch files.
