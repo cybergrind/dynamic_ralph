@@ -43,6 +43,15 @@ from multi_agent.parsing import (
 from multi_agent.prd import find_next_story, load_prd, load_prd_model, save_prd
 from multi_agent.prompts import BASE_AGENT_INSTRUCTIONS, build_system_prompt
 from multi_agent.stream import display_agent_event, display_event
+from multi_agent.tally import (
+    DecisionRecord,
+    Frame,
+    Tally,
+    build_decision,
+    build_iteration_context,
+    compute_tally,
+    detect_veto,
+)
 
 
 __all__ = [
@@ -62,23 +71,30 @@ __all__ = [
     'AgentBackend',
     'AgentEvent',
     'AgentResult',
+    'DecisionRecord',
     'FileLock',
     'FileLockTimeout',
     'FlatStory',
+    'Frame',
     'ParseDiagnostic',
     'Prd',
+    'Tally',
     'UserStory',
     'VoteResult',
     'build_debate_prompt',
+    'build_decision',
     'build_image',
+    'build_iteration_context',
     'build_propose_prompt',
     'build_system_prompt',
     'build_vote_prompt',
     'check_quality_gate',
     'compose',
     'compose_bare',
+    'compute_tally',
     'concatenate_debate',
     'concatenate_proposals',
+    'detect_veto',
     'display_agent_event',
     'display_event',
     'docker_sock_gid',
