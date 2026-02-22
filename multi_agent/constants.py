@@ -62,6 +62,7 @@ SERVICE = os.environ.get('RALPH_SERVICE', 'app')
 INFRA_SERVICES = os.environ.get('RALPH_INFRA_SERVICES', 'mysql,redis').split(',')
 GIT_EMAIL = os.environ.get('RALPH_GIT_EMAIL', 'claude-agent@dynamic-ralph.dev')
 AGENT_BACKEND = os.environ.get('RALPH_AGENT_BACKEND', 'claude-code')
+MULTI_AGENT_MAX_WORKERS = int(os.environ.get('RALPH_MULTI_AGENT_MAX_WORKERS', '5'))
 GIT_AUTHOR_NAME = os.environ.get('RALPH_GIT_AUTHOR_NAME')
 GIT_AUTHOR_EMAIL = os.environ.get('RALPH_GIT_AUTHOR_EMAIL')
 

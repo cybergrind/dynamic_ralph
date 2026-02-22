@@ -10,6 +10,7 @@ from multi_agent.constants import (
     GIT_AUTHOR_NAME,
     GIT_EMAIL,
     INFRA_SERVICES,
+    MULTI_AGENT_MAX_WORKERS,
     RALPH_IMAGE,
     RALPH_INTERNAL_DOCS,
     RALPH_MODE,
@@ -19,6 +20,7 @@ from multi_agent.constants import (
 from multi_agent.docker import build_image, docker_sock_gid, image_exists
 from multi_agent.filelock import FileLock, FileLockTimeout
 from multi_agent.models import FlatStory, Prd, UserStory, parse_prd
+from multi_agent.parallel import launch_parallel_agents
 from multi_agent.prd import find_next_story, load_prd, load_prd_model, save_prd
 from multi_agent.prompts import BASE_AGENT_INSTRUCTIONS, build_system_prompt
 from multi_agent.stream import display_agent_event, display_event
@@ -33,6 +35,7 @@ __all__ = [
     'GIT_AUTHOR_NAME',
     'GIT_EMAIL',
     'INFRA_SERVICES',
+    'MULTI_AGENT_MAX_WORKERS',
     'RALPH_IMAGE',
     'RALPH_INTERNAL_DOCS',
     'RALPH_MODE',
@@ -56,6 +59,7 @@ __all__ = [
     'get_backend',
     'get_git_author_identity',
     'image_exists',
+    'launch_parallel_agents',
     'load_prd',
     'load_prd_model',
     'parse_prd',
