@@ -42,6 +42,7 @@ from multi_agent.tally import (
     compute_tally,
 )
 
+
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -71,12 +72,8 @@ def validate_frame(frame: Frame) -> None:
     - >= 1 key file
     """
     assert frame.question.strip(), 'Frame question must not be empty'
-    assert len(frame.identities) >= 3, (
-        f'Frame requires >= 3 identities, got {len(frame.identities)}'
-    )
-    assert len(frame.success_criteria) >= 1, (
-        'Frame requires >= 1 success criterion'
-    )
+    assert len(frame.identities) >= 3, f'Frame requires >= 3 identities, got {len(frame.identities)}'
+    assert len(frame.success_criteria) >= 1, 'Frame requires >= 1 success criterion'
     assert len(frame.key_files) >= 1, 'Frame requires >= 1 key file'
 
 
@@ -131,10 +128,7 @@ def _select_identities(
 
 def _assign_labels(identity_names: list[str]) -> dict[str, str]:
     """Map identity filenames to uppercase labels (A, B, C, ...)."""
-    return {
-        identity: string.ascii_uppercase[i]
-        for i, identity in enumerate(identity_names)
-    }
+    return {identity: string.ascii_uppercase[i] for i, identity in enumerate(identity_names)}
 
 
 # ---------------------------------------------------------------------------
@@ -152,11 +146,7 @@ def _enforce_quorum(
     log_dir: Path,
 ) -> dict[str, AgentResult]:
     """Retry failed agents once. Raise RuntimeError if still below QUORUM_MIN."""
-    failed = {
-        label: prompts[label]
-        for label, r in results.items()
-        if r.exit_code != 0 or r.timed_out
-    }
+    failed = {label: prompts[label] for label, r in results.items() if r.exit_code != 0 or r.timed_out}
 
     if not failed:
         return results
@@ -175,9 +165,7 @@ def _enforce_quorum(
         if result.exit_code == 0 and not result.timed_out:
             merged[label] = result
 
-    succeeded = sum(
-        1 for r in merged.values() if r.exit_code == 0 and not r.timed_out
-    )
+    succeeded = sum(1 for r in merged.values() if r.exit_code == 0 and not r.timed_out)
     if succeeded < QUORUM_MIN:
         msg = f'Quorum not met: {succeeded}/{len(merged)} agents succeeded (need {QUORUM_MIN})'
         raise RuntimeError(msg)
@@ -224,7 +212,8 @@ def run_propose(
         log_dir=log_dir / 'propose',
     )
     results = _enforce_quorum(
-        results, prompts,
+        results,
+        prompts,
         backend=backend,
         max_turns=PROPOSE_MAX_TURNS,
         timeout=PROPOSE_TIMEOUT,
@@ -296,7 +285,8 @@ def run_debate(
         log_dir=log_dir / 'debate',
     )
     results = _enforce_quorum(
-        results, prompts,
+        results,
+        prompts,
         backend=backend,
         max_turns=DEBATE_MAX_TURNS,
         timeout=DEBATE_TIMEOUT,
@@ -356,7 +346,8 @@ def run_vote(
         log_dir=log_dir / 'vote',
     )
     results = _enforce_quorum(
-        results, prompts,
+        results,
+        prompts,
         backend=backend,
         max_turns=VOTE_MAX_TURNS,
         timeout=VOTE_TIMEOUT,
@@ -451,9 +442,7 @@ def run_multi_agent(
     if codex_text is None:
         codex_text = load_codex()
     if identity_texts is None:
-        identity_texts = {
-            name: load_identity(name) for name in identity_names
-        }
+        identity_texts = {name: load_identity(name) for name in identity_names}
 
     frame_text = _format_frame_text(frame)
 
@@ -482,22 +471,38 @@ def run_multi_agent(
 
         # PROPOSE
         proposals = run_propose(
-            frame, identity_texts, codex_text, frame_text,
-            prior_context, round_dir, log_dir,
+            frame,
+            identity_texts,
+            codex_text,
+            frame_text,
+            prior_context,
+            round_dir,
+            log_dir,
             backend=backend,
         )
 
         # DEBATE
         debate_entries = run_debate(
-            frame, proposals, identity_texts, codex_text, frame_text,
-            prior_context, round_dir, log_dir,
+            frame,
+            proposals,
+            identity_texts,
+            codex_text,
+            frame_text,
+            prior_context,
+            round_dir,
+            log_dir,
             backend=backend,
         )
 
         # VOTE
         votes = run_vote(
-            frame, proposals, debate_entries, identity_texts, codex_text,
-            round_dir, log_dir,
+            frame,
+            proposals,
+            debate_entries,
+            identity_texts,
+            codex_text,
+            round_dir,
+            log_dir,
             backend=backend,
         )
 
@@ -513,7 +518,10 @@ def run_multi_agent(
         (round_dir / 'tally.md').write_text(tally_text)
         log.info(
             'Round %d tally: %s (%s, %.0f%%)',
-            round_num, tally.winner, tally.consensus_type, tally.winner_pct,
+            round_num,
+            tally.winner,
+            tally.consensus_type,
+            tally.winner_pct,
         )
 
         if tally.has_consensus():
@@ -535,7 +543,11 @@ def run_multi_agent(
 
         # Build iteration context for next round
         prior_context = build_iteration_context(
-            round_num, proposals, debate_entries, votes, tally,
+            round_num,
+            proposals,
+            debate_entries,
+            votes,
+            tally,
         )
 
     # DECIDE

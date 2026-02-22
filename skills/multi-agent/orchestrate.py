@@ -2,7 +2,6 @@
 
 import argparse
 import logging
-import sys
 from pathlib import Path
 
 from multi_agent.orchestrate import run_multi_agent

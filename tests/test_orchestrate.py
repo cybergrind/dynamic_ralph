@@ -9,7 +9,6 @@ import pytest
 
 from multi_agent.backend import AgentResult
 from multi_agent.orchestrate import (
-    QUORUM_MIN,
     _enforce_quorum,
     _format_frame_text,
     _select_identities,
@@ -239,8 +238,11 @@ class TestQuorumEnforcement:
         retry_results = {'C': _make_result('ok')}
         with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=retry_results):
             merged = _enforce_quorum(
-                results, prompts,
-                backend=None, max_turns=3, timeout=300,
+                results,
+                prompts,
+                backend=None,
+                max_turns=3,
+                timeout=300,
                 log_dir=tmp_path,
             )
 
@@ -265,8 +267,11 @@ class TestQuorumEnforcement:
         with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=retry_results):
             with pytest.raises(RuntimeError, match='Quorum not met'):
                 _enforce_quorum(
-                    results, prompts,
-                    backend=None, max_turns=3, timeout=300,
+                    results,
+                    prompts,
+                    backend=None,
+                    max_turns=3,
+                    timeout=300,
                     log_dir=tmp_path,
                 )
 
@@ -281,8 +286,11 @@ class TestQuorumEnforcement:
 
         with patch('multi_agent.orchestrate.launch_parallel_agents') as mock_launch:
             merged = _enforce_quorum(
-                results, prompts,
-                backend=None, max_turns=3, timeout=300,
+                results,
+                prompts,
+                backend=None,
+                max_turns=3,
+                timeout=300,
                 log_dir=tmp_path,
             )
             mock_launch.assert_not_called()
@@ -316,9 +324,9 @@ class TestRunMultiAgent:
     def test_strong_consensus_decides_in_one_round(self, tmp_path: Path) -> None:
         """All 5 agents vote for same proposal -> strong consensus."""
         labels = ['A', 'B', 'C', 'D', 'E']
-        propose_results = {l: _proposal_result(l) for l in labels}
-        debate_results = {l: _debate_result(l) for l in labels}
-        vote_results = {l: _vote_result('A') for l in labels}
+        propose_results = {lbl: _proposal_result(lbl) for lbl in labels}
+        debate_results = {lbl: _debate_result(lbl) for lbl in labels}
+        vote_results = {lbl: _vote_result('A') for lbl in labels}
 
         effects = [propose_results, debate_results, vote_results]
 
@@ -351,16 +359,16 @@ class TestRunMultiAgent:
         }
 
         # Round 2: consensus on A
-        consensus_votes = {l: _vote_result('A') for l in labels}
+        consensus_votes = {lbl: _vote_result('A') for lbl in labels}
 
         round1 = {
-            'propose': {l: _proposal_result(l) for l in labels},
-            'debate': {l: _debate_result(l) for l in labels},
+            'propose': {lbl: _proposal_result(lbl) for lbl in labels},
+            'debate': {lbl: _debate_result(lbl) for lbl in labels},
             'vote': split_votes,
         }
         round2 = {
-            'propose': {l: _proposal_result(l) for l in labels},
-            'debate': {l: _debate_result(l) for l in labels},
+            'propose': {lbl: _proposal_result(lbl) for lbl in labels},
+            'debate': {lbl: _debate_result(lbl) for lbl in labels},
             'vote': consensus_votes,
         }
 
@@ -385,19 +393,19 @@ class TestRunMultiAgent:
         labels = ['A', 'B', 'C', 'D', 'E']
 
         # Round 1: everyone votes A, but 3+ share the same concern -> veto
-        veto_votes = {l: _veto_vote_result('A') for l in labels}
+        veto_votes = {lbl: _veto_vote_result('A') for lbl in labels}
 
         # Round 2: consensus on A (concerns addressed)
-        consensus_votes = {l: _vote_result('A') for l in labels}
+        consensus_votes = {lbl: _vote_result('A') for lbl in labels}
 
         round1 = {
-            'propose': {l: _proposal_result(l) for l in labels},
-            'debate': {l: _debate_result(l) for l in labels},
+            'propose': {lbl: _proposal_result(lbl) for lbl in labels},
+            'debate': {lbl: _debate_result(lbl) for lbl in labels},
             'vote': veto_votes,
         }
         round2 = {
-            'propose': {l: _proposal_result(l) for l in labels},
-            'debate': {l: _debate_result(l) for l in labels},
+            'propose': {lbl: _proposal_result(lbl) for lbl in labels},
+            'debate': {lbl: _debate_result(lbl) for lbl in labels},
             'vote': consensus_votes,
         }
 
@@ -431,8 +439,8 @@ class TestRunMultiAgent:
         }
 
         round_data = {
-            'propose': {l: _proposal_result(l) for l in labels},
-            'debate': {l: _debate_result(l) for l in labels},
+            'propose': {lbl: _proposal_result(lbl) for lbl in labels},
+            'debate': {lbl: _debate_result(lbl) for lbl in labels},
             'vote': split_votes,
         }
 
@@ -456,9 +464,9 @@ class TestRunMultiAgent:
         """Verify metadata.json, framing.md, tally.md, decision.md are created."""
         labels = ['A', 'B', 'C', 'D', 'E']
         effects = [
-            {l: _proposal_result(l) for l in labels},
-            {l: _debate_result(l) for l in labels},
-            {l: _vote_result('A') for l in labels},
+            {lbl: _proposal_result(lbl) for lbl in labels},
+            {lbl: _debate_result(lbl) for lbl in labels},
+            {lbl: _vote_result('A') for lbl in labels},
         ]
 
         with patch('multi_agent.orchestrate.launch_parallel_agents', side_effect=effects):
