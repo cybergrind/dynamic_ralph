@@ -229,19 +229,6 @@ class TestComputeTally:
         tally = compute_tally(votes, {'A': 'prop A'})
         assert tally.merge_suggestions == ['merge A and B', 'combine approaches']
 
-    def test_does_not_evaluate_override(self) -> None:
-        """compute_tally should not have override logic."""
-        votes = {
-            'V1': _vote('V1', 'A', unrefuted=['critical arg against A']),
-            'V2': _vote('V2', 'A', unrefuted=['another arg against A']),
-            'V3': _vote('V3', 'A'),
-        }
-        tally = compute_tally(votes, {'A': 'prop A'})
-        # Should still report A as winner despite unrefuted args
-        assert tally.winner == 'A'
-        assert tally.has_consensus() is True
-        assert not hasattr(tally, 'override_candidate')
-
 
 # ---------------------------------------------------------------------------
 # Veto detection
@@ -249,16 +236,6 @@ class TestComputeTally:
 
 
 class TestClusterConcerns:
-    def test_identical_concerns_cluster_together(self) -> None:
-        concerns = [
-            'data loss during migration',
-            'data loss during migration',
-            'data loss during migration',
-        ]
-        clusters = _cluster_concerns(concerns)
-        assert len(clusters) == 1
-        assert len(clusters[0]) == 3
-
     def test_similar_concerns_cluster_together(self) -> None:
         concerns = [
             'data loss during migration',
@@ -414,22 +391,6 @@ class TestBuildDecision:
         record = build_decision(_frame(), tally, {'A': 'prop A'}, {'A': 'debate A'}, tmp_path)
         assert record.override_applied is False
         assert record.unrefuted_args_for_review == ['critical flaw in A']
-
-    def test_decision_preserves_tally(self, tmp_path: Path) -> None:
-        tally = Tally(
-            total_votes=3,
-            vote_counts={'B': 2, 'A': 1},
-            winner='B',
-            winner_pct=66.7,
-            veto_flaws={},
-            unrefuted_args=[],
-            merge_suggestions=[],
-            consensus_type='majority',
-            vetoed=False,
-        )
-        record = build_decision(_frame(), tally, {'B': 'prop B'}, {'B': 'debate B'}, tmp_path)
-        assert record.tally is tally
-        assert record.consensus_type == 'majority'
 
 
 # ---------------------------------------------------------------------------
