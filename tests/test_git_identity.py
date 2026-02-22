@@ -48,9 +48,7 @@ class TestGetGitAuthorIdentity:
         with patch.object(
             multi_agent.constants.subprocess,
             'run',
-            side_effect=_make_git_config_side_effect(
-                {'user.name': 'Git User', 'user.email': 'git@example.com'}
-            ),
+            side_effect=_make_git_config_side_effect({'user.name': 'Git User', 'user.email': 'git@example.com'}),
         ):
             name, email = multi_agent.constants.get_git_author_identity()
         assert name == 'Env User'
@@ -63,9 +61,7 @@ class TestGetGitAuthorIdentity:
         with patch.object(
             multi_agent.constants.subprocess,
             'run',
-            side_effect=_make_git_config_side_effect(
-                {'user.name': 'Git User', 'user.email': 'git@example.com'}
-            ),
+            side_effect=_make_git_config_side_effect({'user.name': 'Git User', 'user.email': 'git@example.com'}),
         ):
             name, email = multi_agent.constants.get_git_author_identity()
         assert name == 'Git User'
@@ -95,9 +91,7 @@ class TestGetGitAuthorIdentity:
         with patch.object(
             multi_agent.constants.subprocess,
             'run',
-            side_effect=_make_git_config_side_effect(
-                {'user.email': 'git@example.com'}
-            ),
+            side_effect=_make_git_config_side_effect({'user.email': 'git@example.com'}),
         ):
             name, email = multi_agent.constants.get_git_author_identity()
 
@@ -114,9 +108,7 @@ class TestGetGitAuthorIdentity:
         with patch.object(
             multi_agent.constants.subprocess,
             'run',
-            side_effect=_make_git_config_side_effect(
-                {'user.name': 'Git User'}
-            ),
+            side_effect=_make_git_config_side_effect({'user.name': 'Git User'}),
         ):
             name, email = multi_agent.constants.get_git_author_identity()
 
