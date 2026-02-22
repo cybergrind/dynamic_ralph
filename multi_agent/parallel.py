@@ -89,6 +89,7 @@ def launch_parallel_agents(
     max_turns: int = 10,
     timeout: int = 900,
     log_dir: Path,
+    log_prefix: str = '',
 ) -> dict[str, AgentResult]:
     """Launch multiple agents in parallel, returning results keyed by label.
 
@@ -109,8 +110,8 @@ def launch_parallel_agents(
 
     def _run_one(label: str, prompt: str) -> tuple[str, AgentResult]:
         cmd = backend.build_command(prompt, max_turns=max_turns)
-        log_path = log_dir / f'{label}.jsonl'
-        stderr_log_path = log_dir / f'{label}.stderr.log'
+        log_path = log_dir / f'{log_prefix}{label}.jsonl'
+        stderr_log_path = log_dir / f'{log_prefix}{label}.stderr.log'
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Initialize all resources to None for safe cleanup in finally block.

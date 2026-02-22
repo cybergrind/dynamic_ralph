@@ -131,6 +131,70 @@ def _assign_labels(identity_names: list[str]) -> dict[str, str]:
     return {identity: string.ascii_uppercase[i] for i, identity in enumerate(identity_names)}
 
 
+def _update_metadata(meta_path: Path, **updates: object) -> None:
+    """Read-modify-write metadata.json with *updates*."""
+    data = json.loads(meta_path.read_text())
+    data.update(updates)
+    meta_path.write_text(json.dumps(data, indent=2))
+
+
+def _apply_convergence_constraints(frame: Frame, tally: Tally) -> None:
+    """Append split/veto constraints to *frame* based on *tally* results."""
+    if tally.consensus_type == 'split':
+        top_two = sorted(tally.vote_counts, key=lambda k: tally.vote_counts[k], reverse=True)[:2]
+        constraint = f'Choose ONLY between proposals {" and ".join(top_two)}. All other proposals are eliminated.'
+        frame.constraints.append(constraint)
+        log.info('Split detected, adding binary choice constraint: %s', constraint)
+
+    if tally.vetoed:
+        for flaws in tally.veto_flaws.values():
+            for flaw in flaws:
+                frame.constraints.append(f'VETOED flaw (must address): {flaw}')
+        log.info('Veto detected, adding flaw constraints')
+
+
+# ---------------------------------------------------------------------------
+# Resume helpers
+# ---------------------------------------------------------------------------
+
+_PHASES = ('propose', 'debate', 'vote', 'tally')
+
+
+def _phase_done(resume_phase: str, phase: str) -> bool:
+    """Return True if *phase* completed before *resume_phase* began."""
+    return _PHASES.index(phase) < _PHASES.index(resume_phase)
+
+
+def _load_agent_files(directory: Path) -> dict[str, str]:
+    """Load agent-{label}.md files from *directory*, returning {label: text}."""
+    entries: dict[str, str] = {}
+    if not directory.exists():
+        return entries
+    for f in sorted(directory.iterdir()):
+        if f.name.startswith('agent-') and f.suffix == '.md':
+            label = f.stem.split('-', 1)[1]
+            entries[label] = f.read_text()
+    return entries
+
+
+def _load_round_proposals(round_dir: Path) -> dict[str, str]:
+    return _load_agent_files(round_dir / 'proposals')
+
+
+def _load_round_debate(round_dir: Path) -> dict[str, str]:
+    return _load_agent_files(round_dir / 'debate')
+
+
+def _load_round_votes(round_dir: Path, valid_proposals: list[str]) -> dict[str, VoteResult]:
+    texts = _load_agent_files(round_dir / 'votes')
+    votes: dict[str, VoteResult] = {}
+    for label, text in texts.items():
+        vote, _ = parse_vote(text, agent_label=label, valid_proposals=valid_proposals)
+        if vote is not None:
+            votes[label] = vote
+    return votes
+
+
 # ---------------------------------------------------------------------------
 # Quorum enforcement
 # ---------------------------------------------------------------------------
@@ -144,6 +208,7 @@ def _enforce_quorum(
     max_turns: int,
     timeout: int,
     log_dir: Path,
+    log_prefix: str = '',
 ) -> dict[str, AgentResult]:
     """Retry failed agents once. Raise RuntimeError if still below QUORUM_MIN."""
     failed = {label: prompts[label] for label, r in results.items() if r.exit_code != 0 or r.timed_out}
@@ -157,7 +222,8 @@ def _enforce_quorum(
         backend=backend,
         max_turns=max_turns,
         timeout=timeout,
-        log_dir=log_dir / 'retry',
+        log_dir=log_dir,
+        log_prefix=f'{log_prefix}retry-',
     )
 
     merged = dict(results)
@@ -188,6 +254,7 @@ def run_propose(
     log_dir: Path,
     *,
     backend: AgentBackend | None = None,
+    log_prefix: str = '',
 ) -> dict[str, str]:
     """Build per-agent PROPOSE prompts, launch in parallel, parse proposals.
 
@@ -204,12 +271,14 @@ def run_propose(
             prior_context=prior_context,
         )
 
+    phase_prefix = f'{log_prefix}propose-'
     results = launch_parallel_agents(
         prompts,
         backend=backend,
         max_turns=PROPOSE_MAX_TURNS,
         timeout=PROPOSE_TIMEOUT,
-        log_dir=log_dir / 'propose',
+        log_dir=log_dir,
+        log_prefix=phase_prefix,
     )
     results = _enforce_quorum(
         results,
@@ -217,7 +286,8 @@ def run_propose(
         backend=backend,
         max_turns=PROPOSE_MAX_TURNS,
         timeout=PROPOSE_TIMEOUT,
-        log_dir=log_dir / 'propose',
+        log_dir=log_dir,
+        log_prefix=phase_prefix,
     )
 
     proposals_dir = round_dir / 'proposals'
@@ -259,6 +329,7 @@ def run_debate(
     log_dir: Path,
     *,
     backend: AgentBackend | None = None,
+    log_prefix: str = '',
 ) -> dict[str, str]:
     """Build per-agent DEBATE prompts, launch in parallel, extract debate entries.
 
@@ -277,12 +348,14 @@ def run_debate(
             prior_context=prior_context,
         )
 
+    phase_prefix = f'{log_prefix}debate-'
     results = launch_parallel_agents(
         prompts,
         backend=backend,
         max_turns=DEBATE_MAX_TURNS,
         timeout=DEBATE_TIMEOUT,
-        log_dir=log_dir / 'debate',
+        log_dir=log_dir,
+        log_prefix=phase_prefix,
     )
     results = _enforce_quorum(
         results,
@@ -290,7 +363,8 @@ def run_debate(
         backend=backend,
         max_turns=DEBATE_MAX_TURNS,
         timeout=DEBATE_TIMEOUT,
-        log_dir=log_dir / 'debate',
+        log_dir=log_dir,
+        log_prefix=phase_prefix,
     )
 
     debate_dir = round_dir / 'debate'
@@ -318,6 +392,7 @@ def run_vote(
     log_dir: Path,
     *,
     backend: AgentBackend | None = None,
+    log_prefix: str = '',
 ) -> dict[str, VoteResult]:
     """Build per-agent VOTE prompts, launch in parallel, parse votes.
 
@@ -338,12 +413,14 @@ def run_vote(
             all_debate_text=all_debate_text,
         )
 
+    phase_prefix = f'{log_prefix}vote-'
     results = launch_parallel_agents(
         prompts,
         backend=backend,
         max_turns=VOTE_MAX_TURNS,
         timeout=VOTE_TIMEOUT,
-        log_dir=log_dir / 'vote',
+        log_dir=log_dir,
+        log_prefix=phase_prefix,
     )
     results = _enforce_quorum(
         results,
@@ -351,7 +428,8 @@ def run_vote(
         backend=backend,
         max_turns=VOTE_MAX_TURNS,
         timeout=VOTE_TIMEOUT,
-        log_dir=log_dir / 'vote',
+        log_dir=log_dir,
+        log_prefix=phase_prefix,
     )
 
     votes_dir = round_dir / 'votes'
@@ -393,6 +471,7 @@ def run_multi_agent(
     backend: AgentBackend | None = None,
     codex_text: str | None = None,
     identity_texts: dict[str, str] | None = None,
+    resume_run_id: str | None = None,
 ) -> DecisionRecord:
     """Main entrypoint: FRAME -> cyclic PROPOSE/DEBATE/VOTE -> DECIDE.
 
@@ -414,17 +493,36 @@ def run_multi_agent(
         Pre-loaded codex text. If None, loaded from disk.
     identity_texts:
         Pre-loaded identity texts keyed by identity name. If None, loaded from disk.
+    resume_run_id:
+        If set, resume a partial run by its run_id instead of starting fresh.
     """
-    run_id = _run_id()
     if working_dir is None:
         working_dir = Path('run_ralph') / 'multi-agent'
-    work = working_dir / run_id
+
+    # ---- Resume vs fresh setup ----
+    start_round = 1
+    resume_phase: str | None = None
+
+    if resume_run_id is not None:
+        work = working_dir / resume_run_id
+        meta_path = work / 'metadata.json'
+        prev_meta = json.loads(meta_path.read_text())
+        run_id = prev_meta['run_id']
+        question = prev_meta['question']
+        num_agents = prev_meta['num_agents']
+        max_rounds = prev_meta['max_rounds']
+        identity_names: list[str] = prev_meta['identities']
+        start_round = max(prev_meta.get('current_round', 1), 1)
+        resume_phase = prev_meta.get('current_phase', 'propose')
+        _update_metadata(meta_path, status='in_progress', finished_at=None)
+    else:
+        run_id = _run_id()
+        work = working_dir / run_id
+        identity_names = _select_identities(identities, num_agents)
+
     log_dir = work / 'logs'
     work.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
-
-    # Select identities
-    identity_names = _select_identities(identities, num_agents)
 
     # Build frame
     frame = Frame(
@@ -446,124 +544,173 @@ def run_multi_agent(
 
     frame_text = _format_frame_text(frame)
 
-    # Write metadata
-    metadata = {
-        'run_id': run_id,
-        'question': question,
-        'num_agents': num_agents,
-        'max_rounds': max_rounds,
-        'identities': identity_names,
-    }
-    (work / 'metadata.json').write_text(json.dumps(metadata, indent=2))
+    # Write metadata (fresh run only; resume already has metadata)
+    meta_path = work / 'metadata.json'
+    if resume_run_id is None:
+        metadata = {
+            'run_id': run_id,
+            'question': question,
+            'num_agents': num_agents,
+            'max_rounds': max_rounds,
+            'identities': identity_names,
+            'started_at': datetime.now(tz=timezone.utc).isoformat(),
+            'finished_at': None,
+            'status': 'in_progress',
+            'current_round': 0,
+            'current_phase': 'framing',
+        }
+        meta_path.write_text(json.dumps(metadata, indent=2))
     (work / 'framing.md').write_text(frame_text)
 
-    # Deliberation loop
+    # ---- Replay completed rounds on resume ----
     prior_context: str | None = None
     tally: Tally | None = None
     proposals: dict[str, str] = {}
     debate_entries: dict[str, str] = {}
     votes: dict[str, VoteResult] = {}
 
-    for round_num in range(1, max_rounds + 1):
-        log.info('=== Round %d/%d ===', round_num, max_rounds)
-        round_dir = work / f'round-{round_num}'
-        round_dir.mkdir(parents=True, exist_ok=True)
+    if resume_run_id is not None:
+        for rn in range(1, start_round):
+            rd = work / f'round-{rn}'
+            proposals = _load_round_proposals(rd)
+            debate_entries = _load_round_debate(rd)
+            votes = _load_round_votes(rd, list(proposals.keys()))
+            tally = compute_tally(votes, proposals)
+            _apply_convergence_constraints(frame, tally)
+            prior_context = build_iteration_context(
+                rn,
+                proposals,
+                debate_entries,
+                votes,
+                tally,
+            )
+        log.info('Resumed run %s from round %d phase %s', resume_run_id, start_round, resume_phase)
 
-        # PROPOSE
-        proposals = run_propose(
-            frame,
-            identity_texts,
-            codex_text,
-            frame_text,
-            prior_context,
-            round_dir,
-            log_dir,
-            backend=backend,
+    try:
+        for round_num in range(start_round, max_rounds + 1):
+            log.info('=== Round %d/%d ===', round_num, max_rounds)
+            round_dir = work / f'round-{round_num}'
+            round_dir.mkdir(parents=True, exist_ok=True)
+
+            rnd_prefix = f'round-{round_num}-'
+            resuming = round_num == start_round and resume_phase is not None
+
+            # PROPOSE
+            if resuming and _phase_done(resume_phase, 'propose'):
+                proposals = _load_round_proposals(round_dir)
+            else:
+                _update_metadata(meta_path, current_round=round_num, current_phase='propose')
+                proposals = run_propose(
+                    frame,
+                    identity_texts,
+                    codex_text,
+                    frame_text,
+                    prior_context,
+                    round_dir,
+                    log_dir,
+                    backend=backend,
+                    log_prefix=rnd_prefix,
+                )
+
+            # DEBATE
+            if resuming and _phase_done(resume_phase, 'debate'):
+                debate_entries = _load_round_debate(round_dir)
+            else:
+                _update_metadata(meta_path, current_phase='debate')
+                debate_entries = run_debate(
+                    frame,
+                    proposals,
+                    identity_texts,
+                    codex_text,
+                    frame_text,
+                    prior_context,
+                    round_dir,
+                    log_dir,
+                    backend=backend,
+                    log_prefix=rnd_prefix,
+                )
+
+            # VOTE
+            if resuming and _phase_done(resume_phase, 'vote'):
+                votes = _load_round_votes(round_dir, list(proposals.keys()))
+            else:
+                _update_metadata(meta_path, current_phase='vote')
+                votes = run_vote(
+                    frame,
+                    proposals,
+                    debate_entries,
+                    identity_texts,
+                    codex_text,
+                    round_dir,
+                    log_dir,
+                    backend=backend,
+                    log_prefix=rnd_prefix,
+                )
+
+            # TALLY (always recompute)
+            _update_metadata(meta_path, current_phase='tally')
+            tally = compute_tally(votes, proposals)
+            tally_text = (
+                f'## Round {round_num} Tally\n\n'
+                f'Winner: Proposal {tally.winner} ({tally.winner_pct:.0f}%)\n'
+                f'Consensus: {tally.consensus_type}\n'
+                f'Vetoed: {tally.vetoed}\n'
+                f'Votes: {tally.vote_counts}\n'
+            )
+            (round_dir / 'tally.md').write_text(tally_text)
+            log.info(
+                'Round %d tally: %s (%s, %.0f%%)',
+                round_num,
+                tally.winner,
+                tally.consensus_type,
+                tally.winner_pct,
+            )
+
+            if tally.has_consensus():
+                log.info('Consensus reached in round %d', round_num)
+                break
+
+            # Convergence constraints
+            _apply_convergence_constraints(frame, tally)
+
+            # Build iteration context for next round
+            prior_context = build_iteration_context(
+                round_num,
+                proposals,
+                debate_entries,
+                votes,
+                tally,
+            )
+
+        # DECIDE
+        assert tally is not None, 'Loop must execute at least once'
+        decision = build_decision(frame, tally, proposals, debate_entries, work)
+
+        # Escalation: max_rounds exhausted without consensus
+        if not tally.has_consensus():
+            decision.consensus_type = 'escalated'
+            decision.decision_text = (
+                f'Proposal {tally.winner} selected after {max_rounds} rounds '
+                f'without consensus (escalated, {tally.winner_pct:.0f}% support).'
+            )
+            log.warning('Max rounds reached, escalating with best available')
+
+        final_status = 'escalated' if decision.consensus_type == 'escalated' else 'completed'
+        _update_metadata(
+            meta_path,
+            finished_at=datetime.now(tz=timezone.utc).isoformat(),
+            status=final_status,
         )
 
-        # DEBATE
-        debate_entries = run_debate(
-            frame,
-            proposals,
-            identity_texts,
-            codex_text,
-            frame_text,
-            prior_context,
-            round_dir,
-            log_dir,
-            backend=backend,
+        (work / 'decision.md').write_text(decision.decision_text)
+        log.info('Decision: %s', decision.decision_text)
+
+        return decision
+
+    except BaseException:
+        _update_metadata(
+            meta_path,
+            finished_at=datetime.now(tz=timezone.utc).isoformat(),
+            status='failed',
         )
-
-        # VOTE
-        votes = run_vote(
-            frame,
-            proposals,
-            debate_entries,
-            identity_texts,
-            codex_text,
-            round_dir,
-            log_dir,
-            backend=backend,
-        )
-
-        # TALLY
-        tally = compute_tally(votes, proposals)
-        tally_text = (
-            f'## Round {round_num} Tally\n\n'
-            f'Winner: Proposal {tally.winner} ({tally.winner_pct:.0f}%)\n'
-            f'Consensus: {tally.consensus_type}\n'
-            f'Vetoed: {tally.vetoed}\n'
-            f'Votes: {tally.vote_counts}\n'
-        )
-        (round_dir / 'tally.md').write_text(tally_text)
-        log.info(
-            'Round %d tally: %s (%s, %.0f%%)',
-            round_num,
-            tally.winner,
-            tally.consensus_type,
-            tally.winner_pct,
-        )
-
-        if tally.has_consensus():
-            log.info('Consensus reached in round %d', round_num)
-            break
-
-        # Convergence detection
-        if tally.consensus_type == 'split':
-            top_two = sorted(tally.vote_counts, key=lambda k: tally.vote_counts[k], reverse=True)[:2]
-            constraint = f'Choose ONLY between proposals {" and ".join(top_two)}. All other proposals are eliminated.'
-            frame.constraints.append(constraint)
-            log.info('Split detected, adding binary choice constraint: %s', constraint)
-
-        if tally.vetoed:
-            for flaws in tally.veto_flaws.values():
-                for flaw in flaws:
-                    frame.constraints.append(f'VETOED flaw (must address): {flaw}')
-            log.info('Veto detected, adding flaw constraints')
-
-        # Build iteration context for next round
-        prior_context = build_iteration_context(
-            round_num,
-            proposals,
-            debate_entries,
-            votes,
-            tally,
-        )
-
-    # DECIDE
-    assert tally is not None, 'Loop must execute at least once'
-    decision = build_decision(frame, tally, proposals, debate_entries, work)
-
-    # Escalation: max_rounds exhausted without consensus
-    if not tally.has_consensus():
-        decision.consensus_type = 'escalated'
-        decision.decision_text = (
-            f'Proposal {tally.winner} selected after {max_rounds} rounds '
-            f'without consensus (escalated, {tally.winner_pct:.0f}% support).'
-        )
-        log.warning('Max rounds reached, escalating with best available')
-
-    (work / 'decision.md').write_text(decision.decision_text)
-    log.info('Decision: %s', decision.decision_text)
-
-    return decision
+        raise
