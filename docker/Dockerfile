@@ -57,7 +57,14 @@ RUN su - agent -c "git config --global --add safe.directory /workspace"
 # Ralph's own instructions baked into /opt/ralph (for third-party repo mode)
 COPY CLAUDE.md /opt/ralph/CLAUDE.md
 COPY docs/ /opt/ralph/docs/
+COPY skills/multi-agent/ /opt/ralph/skills/multi-agent/
+COPY multi_agent/ /opt/ralph/multi_agent/
+ENV PYTHONPATH='/opt/ralph:${PYTHONPATH}'
 RUN chown -R agent:agent /opt/ralph
+
+# Personal-scope skill so Claude Code auto-discovers it regardless of CWD
+COPY skills/multi-agent/SKILL.md /home/agent/.claude/skills/multi-agent/SKILL.md
+RUN chown -R agent:agent /home/agent/.claude
 
 USER agent
 ENV COLORTERM=truecolor
