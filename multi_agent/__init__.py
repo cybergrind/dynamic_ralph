@@ -30,6 +30,7 @@ from multi_agent.constants import (
 from multi_agent.docker import build_image, docker_sock_gid, image_exists
 from multi_agent.filelock import FileLock, FileLockTimeout
 from multi_agent.models import FlatStory, Prd, UserStory, parse_prd
+from multi_agent.orchestrate import run_multi_agent, validate_frame
 from multi_agent.parallel import launch_parallel_agents
 from multi_agent.parsing import (
     ParseDiagnostic,
@@ -111,7 +112,9 @@ __all__ = [
     'parse_proposal',
     'parse_sections',
     'parse_vote',
+    'run_multi_agent',
     'save_prd',
     'summarize_phase_health',
+    'validate_frame',
     'write_phase_diagnostics',
 ]
