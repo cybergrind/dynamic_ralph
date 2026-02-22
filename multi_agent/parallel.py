@@ -132,8 +132,8 @@ def launch_parallel_agents(
                 env=agent_env,
             )
 
-            log_file = open(log_path, 'w')  # noqa: SIM115
-            stderr_log_file = open(stderr_log_path, 'w')  # noqa: SIM115
+            log_file = open(log_path, 'w')
+            stderr_log_file = open(stderr_log_path, 'w')
 
             # Preemptive watchdog: fires after wall-clock deadline regardless
             # of event loop state. See _SubprocessWatchdog docstring.
@@ -192,10 +192,7 @@ def launch_parallel_agents(
     results: dict[str, AgentResult] = {}
     max_workers = min(len(prompts), MULTI_AGENT_MAX_WORKERS)
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = {
-            pool.submit(_run_one, label, prompt): label
-            for label, prompt in prompts.items()
-        }
+        futures = {pool.submit(_run_one, label, prompt): label for label, prompt in prompts.items()}
         for future in concurrent.futures.as_completed(futures):
             label = futures[future]
             try:

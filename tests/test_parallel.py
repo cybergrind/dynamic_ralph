@@ -7,13 +7,10 @@ import os
 import subprocess
 import sys
 import textwrap
-import threading
 import time
 from pathlib import Path
 from typing import Iterator
 from unittest.mock import patch
-
-import pytest
 
 from multi_agent.backend import AgentEvent, AgentResult
 from multi_agent.parallel import (
@@ -40,15 +37,11 @@ class FakeBackend:
         self._script = script
         self._exit_code = exit_code
 
-    def build_command(
-        self, prompt: str, *, system_prompt: str = '', max_turns: int | None = None
-    ) -> list[str]:
+    def build_command(self, prompt: str, *, system_prompt: str = '', max_turns: int | None = None) -> list[str]:
         # Encode the script inline so Popen can run it directly.
         return [sys.executable, '-c', self._script]
 
-    def build_docker_command(
-        self, base_cmd: list[str], *, agent_id: int, workspace: str
-    ) -> list[str]:
+    def build_docker_command(self, base_cmd: list[str], *, agent_id: int, workspace: str) -> list[str]:
         return base_cmd
 
     def parse_events(self, lines: Iterator[str]) -> Iterator[AgentEvent]:
@@ -219,9 +212,7 @@ class TestLaunchParallelAgents:
         backend = FakeBackend(script)
         prompts = {'agent-a': 'do task A', 'agent-b': 'do task B'}
 
-        results = launch_parallel_agents(
-            prompts, backend=backend, log_dir=tmp_path, timeout=30
-        )
+        results = launch_parallel_agents(prompts, backend=backend, log_dir=tmp_path, timeout=30)
 
         assert set(results.keys()) == {'agent-a', 'agent-b'}
         for label, result in results.items():
@@ -237,9 +228,7 @@ class TestLaunchParallelAgents:
         backend = FakeBackend(script)
         prompts = {'alpha': 'prompt alpha'}
 
-        launch_parallel_agents(
-            prompts, backend=backend, log_dir=tmp_path, timeout=30
-        )
+        launch_parallel_agents(prompts, backend=backend, log_dir=tmp_path, timeout=30)
 
         assert (tmp_path / 'alpha.jsonl').exists()
         assert (tmp_path / 'alpha.stderr.log').exists()
@@ -269,9 +258,7 @@ class TestLaunchParallelAgents:
         backend = TrackingBackend(script)
         prompts = {'filter-test': 'test prompt'}
 
-        launch_parallel_agents(
-            prompts, backend=backend, log_dir=tmp_path, timeout=30
-        )
+        launch_parallel_agents(prompts, backend=backend, log_dir=tmp_path, timeout=30)
 
         # extract_result should only get retained kinds
         assert len(received_events) == 1
@@ -291,9 +278,7 @@ class TestLaunchParallelAgents:
         backend = FakeBackend(script)
         prompts = {'disk-test': 'test prompt'}
 
-        launch_parallel_agents(
-            prompts, backend=backend, log_dir=tmp_path, timeout=30
-        )
+        launch_parallel_agents(prompts, backend=backend, log_dir=tmp_path, timeout=30)
 
         log_content = (tmp_path / 'disk-test.jsonl').read_text()
         assert 'tool_use' in log_content
@@ -306,9 +291,7 @@ class TestLaunchParallelAgents:
         backend = FakeBackend(script)
         prompts = {'hang-agent': 'do something'}
 
-        results = launch_parallel_agents(
-            prompts, backend=backend, log_dir=tmp_path, timeout=2
-        )
+        results = launch_parallel_agents(prompts, backend=backend, log_dir=tmp_path, timeout=2)
 
         assert 'hang-agent' in results
         result = results['hang-agent']
@@ -325,9 +308,7 @@ class TestLaunchParallelAgents:
         backend = CrashingBackend()
         prompts = {'crash-agent': 'do something'}
 
-        results = launch_parallel_agents(
-            prompts, backend=backend, log_dir=tmp_path, timeout=30
-        )
+        results = launch_parallel_agents(prompts, backend=backend, log_dir=tmp_path, timeout=30)
 
         assert 'crash-agent' in results
         result = results['crash-agent']
@@ -346,9 +327,7 @@ class TestLaunchParallelAgents:
         prompts = {'env-test': 'check env'}
 
         with patch.dict(os.environ, {'CLAUDECODE': '1'}):
-            results = launch_parallel_agents(
-                prompts, backend=backend, log_dir=tmp_path, timeout=30
-            )
+            results = launch_parallel_agents(prompts, backend=backend, log_dir=tmp_path, timeout=30)
 
         result = results['env-test']
         assert result.final_response == 'False'
@@ -363,9 +342,7 @@ class TestLaunchParallelAgents:
         backend = FakeBackend(script)
         prompts = {'stderr-test': 'test prompt'}
 
-        launch_parallel_agents(
-            prompts, backend=backend, log_dir=tmp_path, timeout=30
-        )
+        launch_parallel_agents(prompts, backend=backend, log_dir=tmp_path, timeout=30)
 
         stderr_content = (tmp_path / 'stderr-test.stderr.log').read_text()
         assert 'warning on stderr' in stderr_content
@@ -378,9 +355,7 @@ class TestLaunchParallelAgents:
         prompts = {f'agent-{i}': f'prompt {i}' for i in range(8)}
 
         with patch('multi_agent.parallel.MULTI_AGENT_MAX_WORKERS', 3):
-            results = launch_parallel_agents(
-                prompts, backend=backend, log_dir=tmp_path, timeout=30
-            )
+            results = launch_parallel_agents(prompts, backend=backend, log_dir=tmp_path, timeout=30)
 
         # All agents still complete, just with capped concurrency
         assert len(results) == 8
@@ -401,8 +376,6 @@ class TestLaunchParallelAgents:
         prompts = {'fail-agent': 'test'}
 
         # Should not raise — the exception is caught and produces 'crashed'
-        results = launch_parallel_agents(
-            prompts, backend=backend, log_dir=tmp_path, timeout=30
-        )
+        results = launch_parallel_agents(prompts, backend=backend, log_dir=tmp_path, timeout=30)
 
         assert results['fail-agent'].completion_status == 'crashed'
