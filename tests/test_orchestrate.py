@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -446,3 +448,31 @@ class TestRunMultiAgent:
         assert (run_dir / 'round-1' / 'proposals').is_dir()
         assert (run_dir / 'round-1' / 'debate').is_dir()
         assert (run_dir / 'round-1' / 'votes').is_dir()
+
+
+# ---------------------------------------------------------------------------
+# TestCLIHelp — CLI entrypoint help argument
+# ---------------------------------------------------------------------------
+
+ORCHESTRATE_SCRIPT = Path(__file__).resolve().parent.parent / 'skills' / 'multi-agent' / 'orchestrate.py'
+
+
+class TestCLIHelp:
+    def test_help_argument_prints_usage(self) -> None:
+        result = subprocess.run(
+            [sys.executable, str(ORCHESTRATE_SCRIPT), 'help'],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert '/multi-agent' in result.stdout
+        assert 'Usage:' in result.stdout
+
+    def test_help_argument_case_insensitive(self) -> None:
+        result = subprocess.run(
+            [sys.executable, str(ORCHESTRATE_SCRIPT), 'HELP'],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert '/multi-agent' in result.stdout
