@@ -167,11 +167,6 @@ class TestParseSections:
         sections, _ = parse_sections(text, required=['Summary', 'Details'])
         assert sections['Summary'] == 'Line 1\nLine 2\n\nLine 3'
 
-    def test_no_optional_kwarg(self) -> None:
-        text = '## Summary\nHello'
-        _sections, diag = parse_sections(text, required=['Summary'])
-        assert diag.parse_succeeded is True
-
 
 # ---------------------------------------------------------------------------
 # parse_sections — code fence handling

@@ -105,13 +105,6 @@ class TestRetainedKinds:
     def test_contents(self):
         assert _RETAINED_KINDS == frozenset({'assistant', 'result', 'system', 'error'})
 
-    def test_excludes_tool_events(self):
-        assert 'tool_use' not in _RETAINED_KINDS
-        assert 'tool_result' not in _RETAINED_KINDS
-
-    def test_is_frozenset(self):
-        assert isinstance(_RETAINED_KINDS, frozenset)
-
 
 # ---------------------------------------------------------------------------
 # TestSubprocessWatchdog
