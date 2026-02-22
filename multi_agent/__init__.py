@@ -21,6 +21,15 @@ from multi_agent.docker import build_image, docker_sock_gid, image_exists
 from multi_agent.filelock import FileLock, FileLockTimeout
 from multi_agent.models import FlatStory, Prd, UserStory, parse_prd
 from multi_agent.parallel import launch_parallel_agents
+from multi_agent.parsing import (
+    ParseDiagnostic,
+    VoteResult,
+    parse_proposal,
+    parse_sections,
+    parse_vote,
+    summarize_phase_health,
+    write_phase_diagnostics,
+)
 from multi_agent.prd import find_next_story, load_prd, load_prd_model, save_prd
 from multi_agent.prompts import BASE_AGENT_INSTRUCTIONS, build_system_prompt
 from multi_agent.stream import display_agent_event, display_event
@@ -46,8 +55,10 @@ __all__ = [
     'FileLock',
     'FileLockTimeout',
     'FlatStory',
+    'ParseDiagnostic',
     'Prd',
     'UserStory',
+    'VoteResult',
     'build_image',
     'build_system_prompt',
     'compose',
@@ -63,5 +74,10 @@ __all__ = [
     'load_prd',
     'load_prd_model',
     'parse_prd',
+    'parse_proposal',
+    'parse_sections',
+    'parse_vote',
     'save_prd',
+    'summarize_phase_health',
+    'write_phase_diagnostics',
 ]
