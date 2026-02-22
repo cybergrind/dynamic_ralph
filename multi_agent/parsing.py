@@ -38,7 +38,7 @@ class ParseDiagnostic:
     headings_seen: list[str] = field(  # ALL headings found in agent output
         default_factory=list,  # (matched and unmatched) for debugging
     )
-    raw_text: str = ""  # full agent output for fallback
+    raw_text: str = ''  # full agent output for fallback
     parse_succeeded: bool = False
 
 
@@ -62,7 +62,7 @@ class VoteResult:
 # Core parser
 # ---------------------------------------------------------------------------
 
-_PROPOSAL_PREFIX_RE = re.compile(r"^proposal\s+", re.IGNORECASE)
+_PROPOSAL_PREFIX_RE = re.compile(r'^proposal\s+', re.IGNORECASE)
 
 
 def parse_sections(
@@ -97,7 +97,7 @@ def parse_sections(
 
         # Track fenced code block state (``` and ~~~).
         # A line starting with ``` or ~~~ toggles fence state.
-        if stripped.startswith("```") or stripped.startswith("~~~"):
+        if stripped.startswith(('```', '~~~')):
             in_code_fence = not in_code_fence
             if current_section is not None:
                 current_lines.append(line)
@@ -109,30 +109,30 @@ def parse_sections(
                 current_lines.append(line)
             continue
 
-        heading_text = line.lstrip("#").strip()
+        heading_text = line.lstrip('#').strip()
         key = heading_text.lower()
 
         # Record every heading we encounter (for headings_seen diagnostic)
-        if line.lstrip().startswith("#") and heading_text:
+        if line.lstrip().startswith('#') and heading_text:
             headings_seen.append(heading_text)
 
         if key in expected:
             if current_section is not None:
-                sections[current_section] = "\n".join(current_lines).strip()
+                sections[current_section] = '\n'.join(current_lines).strip()
             current_section = expected[key]
             current_lines = []
         elif current_section is not None:
             current_lines.append(line)
 
     if current_section is not None:
-        sections[current_section] = "\n".join(current_lines).strip()
+        sections[current_section] = '\n'.join(current_lines).strip()
 
     found = [name for name in required + optional if name in sections]
     missing = [name for name in required if name not in sections]
 
     diag = ParseDiagnostic(
-        agent_label="",  # filled in by caller
-        phase="",  # filled in by caller
+        agent_label='',  # filled in by caller
+        phase='',  # filled in by caller
         sections_found=found,
         sections_missing=missing,
         headings_seen=headings_seen,
@@ -161,10 +161,10 @@ def _parse_concerns(text: str) -> dict[str, str]:
         if not line:
             continue
         # Strip leading bullet markers (- or *)
-        if line.startswith(("- ", "* ")):
+        if line.startswith(('- ', '* ')):
             line = line[2:].strip()
         # Match "Proposal X: text" or "X: text"
-        match = re.match(r"^(?:proposal\s+)?([A-Za-z0-9]+)\s*:\s*(.+)", line, re.IGNORECASE)
+        match = re.match(r'^(?:proposal\s+)?([A-Za-z0-9]+)\s*:\s*(.+)', line, re.IGNORECASE)
         if match:
             label = match.group(1).upper()
             concern = match.group(2).strip()
@@ -187,11 +187,11 @@ def _parse_list(text: str) -> list[str]:
         if not line:
             continue
         # Strip bullet markers
-        if line.startswith(("- ", "* ")):
+        if line.startswith(('- ', '* ')):
             items.append(line[2:].strip())
         # Strip numbered list markers (e.g. "1. ", "2. ")
-        elif re.match(r"^\d+\.\s+", line):
-            items.append(re.sub(r"^\d+\.\s+", "", line).strip())
+        elif re.match(r'^\d+\.\s+', line):
+            items.append(re.sub(r'^\d+\.\s+', '', line).strip())
         else:
             # Plain line — include as-is
             items.append(line)
@@ -216,17 +216,17 @@ def parse_vote(
     """
     sections, diag = parse_sections(
         text,
-        required=["Winner", "Decisive argument", "Concerns about the winner"],
-        optional=["Unrefuted arguments", "Merge suggestion"],
+        required=['Winner', 'Decisive argument', 'Concerns about the winner'],
+        optional=['Unrefuted arguments', 'Merge suggestion'],
     )
     diag.agent_label = agent_label
-    diag.phase = "vote"
+    diag.phase = 'vote'
     if not diag.parse_succeeded:
         return None, diag
 
     # Normalize winner: "Proposal B" -> "B", "proposal b" -> "B", "B" -> "B"
-    raw_winner = sections["Winner"].strip()
-    normalized = _PROPOSAL_PREFIX_RE.sub("", raw_winner).strip().upper()
+    raw_winner = sections['Winner'].strip()
+    normalized = _PROPOSAL_PREFIX_RE.sub('', raw_winner).strip().upper()
 
     if valid_proposals is not None and normalized not in valid_proposals:
         diag.parse_succeeded = False
@@ -236,10 +236,10 @@ def parse_vote(
     return VoteResult(
         voter_label=agent_label,
         winner=normalized,
-        decisive_argument=sections["Decisive argument"],
-        concerns=_parse_concerns(sections["Concerns about the winner"]),
-        unrefuted_arguments=_parse_list(sections.get("Unrefuted arguments", "")),
-        merge_suggestion=sections.get("Merge suggestion"),
+        decisive_argument=sections['Decisive argument'],
+        concerns=_parse_concerns(sections['Concerns about the winner']),
+        unrefuted_arguments=_parse_list(sections.get('Unrefuted arguments', '')),
+        merge_suggestion=sections.get('Merge suggestion'),
     ), diag
 
 
@@ -248,16 +248,16 @@ def parse_proposal(text: str, agent_label: str) -> tuple[dict[str, str] | None, 
     sections, diag = parse_sections(
         text,
         required=[
-            "Summary",
-            "Code sketch",
-            "Files changed",
-            "Migration plan",
+            'Summary',
+            'Code sketch',
+            'Files changed',
+            'Migration plan',
             "What I'd argue",
-            "What worries me",
+            'What worries me',
         ],
     )
     diag.agent_label = agent_label
-    diag.phase = "propose"
+    diag.phase = 'propose'
     if not diag.parse_succeeded:
         return None, diag
     return sections, diag
@@ -274,10 +274,10 @@ def write_phase_diagnostics(
     round_dir: Path,
 ) -> None:
     """Write parse diagnostics to round_dir/diagnostics.jsonl."""
-    path = round_dir / "diagnostics.jsonl"
-    with open(path, "a") as f:
+    path = round_dir / 'diagnostics.jsonl'
+    with open(path, 'a') as f:
         for d in diagnostics:
-            f.write(json.dumps(asdict(d)) + "\n")
+            f.write(json.dumps(asdict(d)) + '\n')
 
 
 def summarize_phase_health(diagnostics: list[ParseDiagnostic]) -> str:
@@ -285,9 +285,9 @@ def summarize_phase_health(diagnostics: list[ParseDiagnostic]) -> str:
     succeeded = sum(1 for d in diagnostics if d.parse_succeeded)
     total = len(diagnostics)
     failures = [
-        f"{d.agent_label}: missing {', '.join(d.sections_missing)}" for d in diagnostics if not d.parse_succeeded
+        f'{d.agent_label}: missing {", ".join(d.sections_missing)}' for d in diagnostics if not d.parse_succeeded
     ]
-    summary = f"{succeeded}/{total} parsed"
+    summary = f'{succeeded}/{total} parsed'
     if failures:
-        summary += f" ({'; '.join(failures)})"
+        summary += f' ({"; ".join(failures)})'
     return summary
