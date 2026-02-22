@@ -33,6 +33,8 @@ class ClaudeCodeBackend:
         cmd: list[str] = [
             'npx',
             '@anthropic-ai/claude-code',
+            '--add-dir',
+            '/opt/ralph',
             '--dangerously-skip-permissions',
             '--print',
             '--verbose',

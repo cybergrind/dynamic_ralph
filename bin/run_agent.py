@@ -64,6 +64,8 @@ def build_interactive_docker_command(
         '/workspace',
         image,
         'claude',
+        '--add-dir',
+        '/opt/ralph',
         '--dangerously-skip-permissions',
     ]
 
