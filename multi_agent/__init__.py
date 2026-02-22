@@ -1,6 +1,16 @@
 """Shared code for the ralph multi-agent workflow."""
 
 from multi_agent.backend import AgentBackend, AgentEvent, AgentResult, get_backend
+from multi_agent.codex_prompts import (
+    build_debate_prompt,
+    build_propose_prompt,
+    build_vote_prompt,
+    check_quality_gate,
+    concatenate_debate,
+    concatenate_proposals,
+    load_codex,
+    load_identity,
+)
 from multi_agent.compose import compose, compose_bare
 from multi_agent.constants import (
     AGENT_BACKEND,
@@ -59,10 +69,16 @@ __all__ = [
     'Prd',
     'UserStory',
     'VoteResult',
+    'build_debate_prompt',
     'build_image',
+    'build_propose_prompt',
     'build_system_prompt',
+    'build_vote_prompt',
+    'check_quality_gate',
     'compose',
     'compose_bare',
+    'concatenate_debate',
+    'concatenate_proposals',
     'display_agent_event',
     'display_event',
     'docker_sock_gid',
@@ -71,6 +87,8 @@ __all__ = [
     'get_git_author_identity',
     'image_exists',
     'launch_parallel_agents',
+    'load_codex',
+    'load_identity',
     'load_prd',
     'load_prd_model',
     'parse_prd',
