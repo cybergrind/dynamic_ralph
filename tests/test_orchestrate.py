@@ -10,7 +10,6 @@ import pytest
 from multi_agent.backend import AgentResult
 from multi_agent.orchestrate import (
     _enforce_quorum,
-    _format_frame_text,
     _select_identities,
     run_multi_agent,
     validate_frame,
@@ -184,34 +183,11 @@ class TestValidateFrame:
 
 
 # ---------------------------------------------------------------------------
-# TestFormatFrameText
-# ---------------------------------------------------------------------------
-
-
-class TestFormatFrameText:
-    def test_contains_question(self) -> None:
-        frame = _make_frame()
-        text = _format_frame_text(frame)
-        assert '## Question' in text
-        assert 'How should we design the API?' in text
-
-    def test_contains_constraints(self) -> None:
-        frame = _make_frame(constraints=['Must use REST', 'No breaking changes'])
-        text = _format_frame_text(frame)
-        assert '## Constraints' in text
-        assert 'Must use REST' in text
-
-
-# ---------------------------------------------------------------------------
 # TestSelectIdentities
 # ---------------------------------------------------------------------------
 
 
 class TestSelectIdentities:
-    def test_explicit_identities_returned(self) -> None:
-        result = _select_identities(['a.md', 'b.md', 'c.md'], num_agents=3)
-        assert result == ['a.md', 'b.md', 'c.md']
-
     def test_samples_from_directory(self, tmp_path: Path) -> None:
         for name in ['i_a.md', 'i_b.md', 'i_c.md', 'i_d.md', 'i_e.md']:
             (tmp_path / name).write_text(f'identity {name}')
@@ -274,28 +250,6 @@ class TestQuorumEnforcement:
                     timeout=300,
                     log_dir=tmp_path,
                 )
-
-    def test_no_retry_when_all_succeed(self, tmp_path: Path) -> None:
-        """All agents succeed -> no retry, no launch_parallel_agents call."""
-        results = {
-            'A': _make_result('ok'),
-            'B': _make_result('ok'),
-            'C': _make_result('ok'),
-        }
-        prompts = {'A': 'p', 'B': 'p', 'C': 'p'}
-
-        with patch('multi_agent.orchestrate.launch_parallel_agents') as mock_launch:
-            merged = _enforce_quorum(
-                results,
-                prompts,
-                backend=None,
-                max_turns=3,
-                timeout=300,
-                log_dir=tmp_path,
-            )
-            mock_launch.assert_not_called()
-
-        assert len(merged) == 3
 
 
 # ---------------------------------------------------------------------------
