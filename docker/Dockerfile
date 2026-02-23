@@ -62,7 +62,7 @@ ENV PYTHONPATH='/opt/ralph:${PYTHONPATH}'
 RUN chown -R agent:agent /opt/ralph
 
 # Personal-scope skill so Claude Code auto-discovers it regardless of CWD
-COPY skills /opt/ralph/.claude/
+COPY skills /opt/ralph/.claude/skills
 
 USER agent
 ENV COLORTERM=truecolor
