@@ -1,0 +1,65 @@
+# Version control
+.git
+.gitignore
+
+# Python build artifacts
+*.pyc
+__pycache__/
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Testing / CI
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Environment and secrets
+.env
+.env.*
+
+# Dynamic Ralph runtime artifacts
+run_ralph/
+working/
+worktrees/
+prd.json
+scratch.md
+scratch_*.md
+workflow_edits/
+docs/decisions/
+docs/scratches/
+
+# Docker
+docker-compose*.yml
+compose*.yml
+docker-compose.override.yml
+
+# Third-party checkouts
+third_party/
+
+# uv
+.python-version
+
+# Not needed in Docker context
+README.md
+MANIFEST.in
+bin/
+tests/
+.editorconfig
