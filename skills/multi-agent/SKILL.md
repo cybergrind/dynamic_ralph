@@ -32,7 +32,7 @@ Invoke with a question or topic:
 
 Run the orchestrator script:
 ```bash
-python /opt/ralph/skills/multi-agent/orchestrate.py "$ARGUMENTS"
+ralph-run /opt/ralph/.claude/skills/multi-agent/orchestrate.py "$ARGUMENTS"
 ```
 
 Results are written to `/workspace/run_ralph/multi-agent/<run_id>/`.

@@ -56,9 +56,17 @@ RUN su - agent -c "git config --global --add safe.directory /workspace"
 
 # Ralph's own instructions baked into /opt/ralph (for third-party repo mode)
 COPY CLAUDE.md /opt/ralph/CLAUDE.md
+COPY pyproject.toml uv.lock /opt/ralph/
 COPY docs/ /opt/ralph/docs/
 COPY multi_agent/ /opt/ralph/multi_agent/
-ENV PYTHONPATH='/opt/ralph:${PYTHONPATH}'
+
+# Ralph's own venv (separate from workspace venv at /tmp/venv)
+RUN UV_PROJECT_ENVIRONMENT=/opt/ralph/.venv uv sync --frozen --no-install-project --directory /opt/ralph
+
+# Wrapper: ralph-run uses ralph's own venv with correct PYTHONPATH
+RUN printf '#!/bin/sh\nPYTHONPATH=/opt/ralph exec /opt/ralph/.venv/bin/python "$@"\n' \
+    > /usr/local/bin/ralph-run && chmod +x /usr/local/bin/ralph-run
+
 RUN chown -R agent:agent /opt/ralph
 
 # Personal-scope skill so Claude Code auto-discovers it regardless of CWD
