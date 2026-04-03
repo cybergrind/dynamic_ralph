@@ -10,6 +10,10 @@ def _load_ralph_claude_md() -> str:
     internal = Path(RALPH_INTERNAL_DOCS) / 'CLAUDE.md'
     if internal.is_file():
         return internal.read_text().strip()
+    # Package data fallback (wheel install)
+    pkg_data = Path(__file__).resolve().parent / '_data' / 'CLAUDE.md'
+    if pkg_data.is_file():
+        return pkg_data.read_text().strip()
     local = Path('CLAUDE.md')
     if local.is_file():
         return local.read_text().strip()

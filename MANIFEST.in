@@ -1,4 +1,0 @@
-include CLAUDE.md
-include .dockerignore
-include docker/Dockerfile
-recursive-include docs *

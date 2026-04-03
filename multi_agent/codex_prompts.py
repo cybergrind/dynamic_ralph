@@ -16,10 +16,23 @@ from multi_agent.parsing import parse_proposal
 
 
 # ---------------------------------------------------------------------------
-# Path defaults (derived from RALPH_INTERNAL_DOCS)
+# Path defaults (derived from RALPH_INTERNAL_DOCS, with package data fallback)
 # ---------------------------------------------------------------------------
 
-RALPH_DOCS = Path(RALPH_INTERNAL_DOCS) / 'docs'
+_PACKAGE_DATA_DOCS = Path(__file__).resolve().parent / '_data' / 'docs'
+
+
+def _resolve_docs_dir() -> Path:
+    """Return the docs directory, preferring /opt/ralph/docs then package data."""
+    internal = Path(RALPH_INTERNAL_DOCS) / 'docs'
+    if internal.is_dir():
+        return internal
+    if _PACKAGE_DATA_DOCS.is_dir():
+        return _PACKAGE_DATA_DOCS
+    return internal  # fallback to original (will fail at read time with a clear path)
+
+
+RALPH_DOCS = _resolve_docs_dir()
 IDENTITIES_DIR = RALPH_DOCS / 'identities'
 CODEX_PATH = RALPH_DOCS / 'multi_agent_codex.md'
 

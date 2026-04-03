@@ -1,3 +1,4 @@
+.envrc
 # Python
 *.pyc
 __pycache__/
@@ -43,3 +44,4 @@ workflow_edits/
 
 # Docker
 docker-compose.override.yml
+/.claude/
