@@ -27,7 +27,7 @@ def build_interactive_docker_command(
         workspace = os.getcwd()
 
     author_name, author_email = get_git_author_identity()
-    claude_dir, config_claude = host_claude_paths()
+    claude_dir, config_claude, claude_json = host_claude_paths()
 
     cmd: list[str] = [
         'docker',
@@ -60,6 +60,8 @@ def build_interactive_docker_command(
         f'{claude_dir}:/home/agent/.claude',
         '-v',
         f'{config_claude}:/home/agent/.config/claude',
+        '-v',
+        f'{claude_json}:/home/agent/.claude.json',
         '-w',
         '/workspace',
         image,

@@ -18,7 +18,13 @@ def _mock_docker_sock_gid():
 
 @pytest.fixture(autouse=True)
 def _mock_home(tmp_path: Path):
-    with patch('bin.run_agent.Path.home', return_value=tmp_path):
+    claude_dir = tmp_path / '.claude'
+    config_claude = tmp_path / '.config' / 'claude'
+    claude_json = tmp_path / '.claude.json'
+    with patch(
+        'bin.run_agent.host_claude_paths',
+        return_value=(claude_dir, config_claude, claude_json),
+    ):
         yield tmp_path
 
 
@@ -41,12 +47,15 @@ class TestBuildInteractiveDockerCommand:
         cmd = build_interactive_docker_command(workspace='/src')
         assert f'{tmp_path / ".claude"}:/home/agent/.claude' in cmd
         assert f'{tmp_path / ".config" / "claude"}:/home/agent/.config/claude' in cmd
+        assert f'{tmp_path / ".claude.json"}:/home/agent/.claude.json' in cmd
 
     def test_ends_with_claude_skip_permissions(self):
         cmd = build_interactive_docker_command(workspace='/src')
-        # Find the image position, claude and flag follow it
-        assert cmd[-2] == 'claude'
         assert cmd[-1] == '--dangerously-skip-permissions'
+        # claude --add-dir /opt/ralph --dangerously-skip-permissions
+        claude_idx = cmd.index('claude')
+        assert cmd[claude_idx + 1] == '--add-dir'
+        assert cmd[claude_idx + 2] == '/opt/ralph'
 
     def test_uses_default_image(self):
         cmd = build_interactive_docker_command(workspace='/src')

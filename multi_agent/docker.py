@@ -50,8 +50,8 @@ def docker_sock_gid() -> str:
     return str(os.stat('/var/run/docker.sock').st_gid)
 
 
-def host_claude_paths() -> tuple[Path, Path]:
-    """Resolve host paths for ``~/.claude`` and ``~/.config/claude``.
+def host_claude_paths() -> tuple[Path, Path, Path]:
+    """Resolve host paths for ``~/.claude``, ``~/.config/claude``, and ``~/.claude.json``.
 
     When running inside a container, ``Path.home()`` returns the container's
     home (e.g. ``/home/agent``), but Docker volume mounts are resolved by the
@@ -62,6 +62,7 @@ def host_claude_paths() -> tuple[Path, Path]:
     home = Path.home()
     claude_dir = home / '.claude'
     config_claude = home / '.config' / 'claude'
+    claude_json = home / '.claude.json'
 
     full_path_file = claude_dir / 'full_path'
     if full_path_file.is_file():
@@ -71,5 +72,6 @@ def host_claude_paths() -> tuple[Path, Path]:
         host_home = host_claude.parent
         claude_dir = host_claude
         config_claude = host_home / '.config' / 'claude'
+        claude_json = host_home / '.claude.json'
 
-    return claude_dir, config_claude
+    return claude_dir, config_claude, claude_json

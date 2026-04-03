@@ -64,7 +64,7 @@ class ClaudeCodeBackend:
 
         author_name, author_email = get_git_author_identity()
         compose_project = f'ralph_agent_{agent_id}'
-        claude_config, host_config_claude = host_claude_paths()
+        claude_config, host_config_claude, claude_json = host_claude_paths()
 
         return [
             'docker',
@@ -102,6 +102,8 @@ class ClaudeCodeBackend:
             f'{claude_config}:/home/agent/.claude',
             '-v',
             f'{host_config_claude}:/home/agent/.config/claude',
+            '-v',
+            f'{claude_json}:/home/agent/.claude.json',
             '-v',
             'ralph_precommit_cache:/home/agent/.cache/pre-commit',
             '-w',
