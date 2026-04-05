@@ -178,7 +178,7 @@ class TestDockerCommandWithPrompt:
     def test_interactive_prompt_forwarded(self):
         cmd = build_interactive_docker_command(workspace='/src', prompt='do something')
         assert cmd[-1] == 'do something'
-        assert '-p' not in cmd[cmd.index('claude'):]
+        assert '-p' not in cmd[cmd.index('claude') :]
 
     def test_print_mode_prompt_forwarded(self):
         cmd = build_interactive_docker_command(workspace='/src', prompt='do something', print_mode=True)

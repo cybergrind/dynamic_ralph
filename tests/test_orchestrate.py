@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from multi_agent.backend import AgentResult
+from multi_agent.backend import AgentResult, LaunchConfig
 from multi_agent.orchestrate import (
     _agent_succeeded,
     _enforce_quorum,
@@ -257,10 +257,7 @@ class TestQuorumEnforcement:
             merged = _enforce_quorum(
                 results,
                 prompts,
-                backend=None,
-                max_turns=3,
-                timeout=300,
-                log_dir=tmp_path,
+                LaunchConfig(log_dir=tmp_path, max_turns=3, timeout=300),
             )
 
         assert merged['C'].exit_code == 0
@@ -279,10 +276,7 @@ class TestQuorumEnforcement:
             merged = _enforce_quorum(
                 results,
                 prompts,
-                backend=None,
-                max_turns=3,
-                timeout=300,
-                log_dir=tmp_path,
+                LaunchConfig(log_dir=tmp_path, max_turns=3, timeout=300),
             )
 
         assert merged['C'].full_response == 'recovered output'
@@ -301,10 +295,7 @@ class TestQuorumEnforcement:
             merged = _enforce_quorum(
                 results,
                 prompts,
-                backend=None,
-                max_turns=3,
-                timeout=300,
-                log_dir=tmp_path,
+                LaunchConfig(log_dir=tmp_path, max_turns=3, timeout=300),
             )
 
         # Quorum already met (3 succeeded), retry still happens but result is fine
@@ -326,15 +317,12 @@ class TestQuorumEnforcement:
             _enforce_quorum(
                 results,
                 prompts,
-                backend=None,
-                max_turns=3,
-                timeout=300,
-                log_dir=tmp_path,
-                output_schema=schema,
+                LaunchConfig(log_dir=tmp_path, max_turns=3, timeout=300, output_schema=schema),
             )
 
         mock.assert_called_once()
-        assert mock.call_args.kwargs.get('output_schema') is schema
+        call_config = mock.call_args.kwargs.get('config') or mock.call_args.args[1]
+        assert call_config.output_schema is schema
 
     def test_below_quorum_after_retry_raises(self, tmp_path: Path) -> None:
         """3+ agents fail even after retry -> RuntimeError raised."""
@@ -357,10 +345,7 @@ class TestQuorumEnforcement:
                 _enforce_quorum(
                     results,
                     prompts,
-                    backend=None,
-                    max_turns=3,
-                    timeout=300,
-                    log_dir=tmp_path,
+                    LaunchConfig(log_dir=tmp_path, max_turns=3, timeout=300),
                 )
 
 
@@ -661,8 +646,8 @@ class TestRunVoteStructuredOutput:
 
         # First call is the main launch (not quorum retry)
         call_kwargs = mock.call_args_list[0].kwargs
-        assert 'output_schema' in call_kwargs
-        os = call_kwargs['output_schema']
+        call_config = call_kwargs.get('config') or mock.call_args_list[0].args[1]
+        os = call_config.output_schema
         assert os.disable_tools is True  # vote disables tools!
         assert 'winner' in os.json_schema.get('properties', {})
         assert 'decisive_argument' in os.json_schema.get('properties', {})
@@ -806,9 +791,8 @@ class TestRunProposeStructuredOutput:
                 log_dir,
             )
 
-        call_kwargs = mock.call_args_list[0].kwargs
-        assert 'output_schema' in call_kwargs
-        os = call_kwargs['output_schema']
+        call_config = mock.call_args_list[0].kwargs.get('config') or mock.call_args_list[0].args[1]
+        os = call_config.output_schema
         assert os.disable_tools is False  # propose needs tools!
         assert 'summary' in os.json_schema.get('properties', {})
         assert 'code_sketch' in os.json_schema.get('properties', {})
@@ -908,9 +892,8 @@ class TestRunDebateStructuredOutput:
                 log_dir,
             )
 
-        call_kwargs = mock.call_args_list[0].kwargs
-        assert 'output_schema' in call_kwargs
-        os = call_kwargs['output_schema']
+        call_config = mock.call_args_list[0].kwargs.get('config') or mock.call_args_list[0].args[1]
+        os = call_config.output_schema
         assert os.disable_tools is False  # debate needs tools!
         assert 'my_case' in os.json_schema.get('properties', {})
         assert 'challenges_to_other_proposals' in os.json_schema.get('properties', {})
@@ -1175,8 +1158,12 @@ class TestTraceIntegration:
                 identity_texts=_TEST_IDENTITY_TEXTS,
             )
 
-        # All calls to launch_parallel_agents should include identity_names
+        # All calls to launch_parallel_agents should include identity_names via tracing
         for call in mock.call_args_list:
             kwargs = call.kwargs
-            assert 'identity_names' in kwargs, f'identity_names not passed: {kwargs.keys()}'
-            assert isinstance(kwargs['identity_names'], dict)
+            tracing_ctx = kwargs.get('tracing')
+            assert tracing_ctx is not None or 'identity_names' in kwargs, (
+                f'Neither tracing nor identity_names passed: {kwargs.keys()}'
+            )
+            if tracing_ctx is not None:
+                assert isinstance(tracing_ctx.identity_names, dict)

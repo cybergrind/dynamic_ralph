@@ -127,6 +127,48 @@ class TraceWriter:
 
 
 # ---------------------------------------------------------------------------
+# TracingContext — carries tracing state through the call chain
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class TracingContext:
+    """Bundles ``TraceWriter``, parent span ID, and identity mapping.
+
+    Replaces the ``tracer`` / ``trace_parent_id`` / ``identity_names``
+    triple that was threaded through every function signature.
+    """
+
+    writer: TraceWriter | None = None
+    parent_span_id: str | None = None
+    identity_names: dict[str, str] | None = None
+
+    def begin(self, span_id: str, kind: str, label: str, **details: object) -> TraceSpan | None:
+        """Begin a span if writer is configured, else return None."""
+        if not self.writer:
+            return None
+        return self.writer.begin(span_id, kind, label, parent_id=self.parent_span_id, **details)
+
+    def end(self, span: TraceSpan | None, **details: object) -> None:
+        """End a span if both span and writer exist."""
+        if span and self.writer:
+            self.writer.end(span, **details)
+
+    def progress(self, span: TraceSpan | None, message: str) -> None:
+        """Record a progress heartbeat if both span and writer exist."""
+        if span and self.writer:
+            self.writer.progress(span, message)
+
+    def child(self, parent_span_id: str) -> TracingContext:
+        """Create child context with a new parent span ID."""
+        return TracingContext(
+            writer=self.writer,
+            parent_span_id=parent_span_id,
+            identity_names=self.identity_names,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Trace querying
 # ---------------------------------------------------------------------------
 

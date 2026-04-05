@@ -6,7 +6,41 @@ import json
 import threading
 from pathlib import Path
 
-from multi_agent.trace import TraceSpan, TraceWriter, format_agent_log, format_trace_report
+from multi_agent.trace import TraceSpan, TraceWriter, TracingContext, format_agent_log, format_trace_report
+
+
+# ===========================================================================
+# TracingContext
+# ===========================================================================
+
+
+class TestTracingContext:
+    def test_begin_returns_none_without_writer(self):
+        ctx = TracingContext()
+        assert ctx.begin('span-1', 'agent', 'agent-A') is None
+
+    def test_end_noop_without_writer(self):
+        ctx = TracingContext()
+        ctx.end(None)  # should not raise
+
+    def test_begin_delegates_to_writer(self, tmp_path):
+        writer = TraceWriter(tmp_path / 'trace.jsonl')
+        ctx = TracingContext(writer=writer, parent_span_id='run')
+        span = ctx.begin('round-1', 'round', 'round-1')
+        assert span is not None
+        assert span.parent_id == 'run'
+
+    def test_child_inherits_writer_and_identity(self, tmp_path):
+        writer = TraceWriter(tmp_path / 'trace.jsonl')
+        ctx = TracingContext(writer=writer, parent_span_id='run', identity_names={'A': 'i_consul.md'})
+        child = ctx.child('round-1')
+        assert child.writer is writer
+        assert child.parent_span_id == 'round-1'
+        assert child.identity_names == {'A': 'i_consul.md'}
+
+    def test_progress_noop_without_writer(self):
+        ctx = TracingContext()
+        ctx.progress(None, 'hello')  # should not raise
 
 
 # ===========================================================================

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Iterator, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel
@@ -94,6 +95,27 @@ class OutputSchema:
     def from_model(model_cls: type[BaseModel], *, disable_tools: bool = False) -> 'OutputSchema':
         """Create from a Pydantic model class."""
         return OutputSchema(json_schema=model_cls.model_json_schema(), disable_tools=disable_tools)
+
+
+# ---------------------------------------------------------------------------
+# LaunchConfig — grouped execution parameters for parallel agents
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class LaunchConfig:
+    """Execution parameters for launching parallel agents.
+
+    Groups the scattered kwargs of :func:`launch_parallel_agents` into a
+    single, immutable configuration object.
+    """
+
+    log_dir: Path
+    backend: AgentBackend | None = None
+    max_turns: int = 10
+    timeout: int = 900
+    log_prefix: str = ''
+    output_schema: OutputSchema | None = None
 
 
 # ---------------------------------------------------------------------------

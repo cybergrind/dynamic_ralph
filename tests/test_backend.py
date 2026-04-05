@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -14,6 +15,7 @@ from multi_agent.backend import (
     AgentEvent,
     AgentResult,
     EventKind,
+    LaunchConfig,
     get_backend,
     register_backend,
 )
@@ -57,6 +59,21 @@ class TestEventKind:
 
         valid_kinds = set(get_args(EventKind))
         assert _RETAINED_KINDS <= valid_kinds
+
+
+class TestLaunchConfig:
+    def test_defaults(self):
+        cfg = LaunchConfig(log_dir=Path('/tmp'))
+        assert cfg.backend is None
+        assert cfg.max_turns == 10
+        assert cfg.timeout == 900
+        assert cfg.log_prefix == ''
+        assert cfg.output_schema is None
+
+    def test_frozen(self):
+        cfg = LaunchConfig(log_dir=Path('/tmp'))
+        with pytest.raises(AttributeError):
+            cfg.timeout = 42  # type: ignore[misc]
 
 
 class TestAgentEvent:

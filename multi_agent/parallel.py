@@ -13,20 +13,18 @@ from __future__ import annotations
 
 import concurrent.futures
 import json
+import logging
 import os
 import subprocess
 import threading
 import time as _time
-from pathlib import Path
-from typing import TYPE_CHECKING
 
-from multi_agent.backend import AgentBackend, AgentEvent, AgentResult, EventKind, OutputSchema, get_backend
+from multi_agent.backend import AgentEvent, AgentResult, EventKind, LaunchConfig, get_backend
 from multi_agent.constants import MULTI_AGENT_MAX_WORKERS
+from multi_agent.trace import TracingContext
 
 
-if TYPE_CHECKING:
-    from multi_agent.trace import TraceWriter
-
+log = logging.getLogger(__name__)
 
 # Only retain events that extract_result() inspects. Tool events (tool_use,
 # tool_result) contain full file contents and would amplify memory 10x when
@@ -98,48 +96,46 @@ _PROGRESS_INTERVAL: float = 30.0  # seconds between progress heartbeats
 
 def launch_parallel_agents(
     prompts: dict[str, str],
-    *,
-    backend: AgentBackend | None = None,
-    max_turns: int = 10,
-    timeout: int = 900,
-    log_dir: Path,
-    log_prefix: str = '',
-    output_schema: OutputSchema | None = None,
-    tracer: TraceWriter | None = None,
-    trace_parent_id: str | None = None,
-    identity_names: dict[str, str] | None = None,
+    config: LaunchConfig,
+    tracing: TracingContext | None = None,
 ) -> dict[str, AgentResult]:
     """Launch multiple agents in parallel, returning results keyed by label.
 
-    Mirrors the safety guarantees of executor.py:_launch_agent():
-    - backend.env_filter() (prevents nested-session detection)
-    - Preemptive wall-clock timeout via _SubprocessWatchdog
-    - _RETAINED_KINDS event filter (bounds memory for concurrent agents)
-    - stderr capture to per-agent log files (prevents pipe buffer deadlock)
-    - Deterministic subprocess cleanup in finally blocks
-
-    Pass a FakeBackend for testing without spawning real claude -p processes.
+    Pass a FakeBackend via ``config.backend`` for testing without spawning
+    real claude -p processes.
     """
-    if backend is None:
-        backend = get_backend()
 
-    agent_env = backend.env_filter(dict(os.environ))
+    _backend = config.backend or get_backend()
+
+    # Fast path: TestingBackend bypasses subprocess overhead
+    from multi_agent.testing import TestingBackend
+
+    if isinstance(_backend, TestingBackend):
+        results: dict[str, AgentResult] = {}
+        for label in prompts:
+            try:
+                results[label] = _backend.get_result(label)
+            except KeyError:
+                results[label] = AgentResult(exit_code=1, completion_status='crashed')
+        return results
+
+    agent_env = _backend.env_filter(dict(os.environ))
 
     def _run_one(label: str, prompt: str) -> tuple[str, AgentResult]:
-        cmd = backend.build_command(prompt, max_turns=max_turns, output_schema=output_schema)
-        log_path = log_dir / f'{log_prefix}{label}.jsonl'
+        cmd = _backend.build_command(prompt, max_turns=config.max_turns, output_schema=config.output_schema)
+        log_path = config.log_dir / f'{config.log_prefix}{label}.jsonl'
 
-        span_id = f'{trace_parent_id}-{label}' if trace_parent_id else f'agent-{label}'
-        identity = identity_names.get(label) if identity_names else None
+        _parent_id = tracing.parent_span_id if tracing else None
+        span_id = f'{_parent_id}-{label}' if _parent_id else f'agent-{label}'
+        _identity_names = tracing.identity_names if tracing else None
+        identity = _identity_names.get(label) if _identity_names else None
         span_details: dict[str, object] = {'log_path': str(log_path)}
         if identity:
             span_details['identity'] = identity
         trace_span = (
-            tracer.begin(span_id, 'agent', f'agent-{label}', parent_id=trace_parent_id, **span_details)
-            if tracer
-            else None
+            tracing.begin(span_id, 'agent', f'agent-{label}', **span_details) if tracing and tracing.writer else None
         )
-        stderr_log_path = log_dir / f'{log_prefix}{label}.stderr.log'
+        stderr_log_path = config.log_dir / f'{config.log_prefix}{label}.stderr.log'
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Initialize all resources to None for safe cleanup in finally block.
@@ -166,7 +162,7 @@ def launch_parallel_agents(
 
             # Preemptive watchdog: fires after wall-clock deadline regardless
             # of event loop state. See _SubprocessWatchdog docstring.
-            watchdog = _SubprocessWatchdog(proc, timeout)
+            watchdog = _SubprocessWatchdog(proc, config.timeout)
             watchdog.start()
 
             # Drain stderr in a background thread to prevent pipe buffer deadlock.
@@ -184,7 +180,7 @@ def launch_parallel_agents(
             event_count = 0
             last_progress = _time.monotonic()
 
-            for event in backend.parse_events(iter(proc.stdout)):
+            for event in _backend.parse_events(iter(proc.stdout)):
                 # Write ALL events to disk log for post-mortem analysis
                 if event.raw:
                     log_file.write(json.dumps(event.raw) + '\n')
@@ -197,10 +193,10 @@ def launch_parallel_agents(
                 event_count += 1
 
                 # Periodic progress heartbeat for tracing
-                if tracer and trace_span:
+                if tracing and tracing.writer and trace_span:
                     now = _time.monotonic()
                     if now - last_progress >= _PROGRESS_INTERVAL:
-                        tracer.progress(trace_span, f'{event_count} events received')
+                        tracing.progress(trace_span, f'{event_count} events received')
                         last_progress = now
 
             proc.wait()
@@ -225,11 +221,11 @@ def launch_parallel_agents(
                 stderr_log_file.close()
 
         timed_out = watchdog.fired if watchdog else False
-        result = backend.extract_result(all_events, proc.returncode or 0)
+        result = _backend.extract_result(all_events, proc.returncode or 0)
         result.timed_out = timed_out
 
-        if tracer and trace_span:
-            span_details: dict = {
+        if tracing and trace_span:
+            end_details: dict = {
                 'cost_usd': result.cost_usd,
                 'input_tokens': result.input_tokens,
                 'output_tokens': result.output_tokens,
@@ -238,8 +234,8 @@ def launch_parallel_agents(
                 'num_turns': result.num_turns,
             }
             if result.structured_output is not None:
-                span_details['structured_output'] = result.structured_output
-            tracer.end(trace_span, **span_details)
+                end_details['structured_output'] = result.structured_output
+            tracing.end(trace_span, **end_details)
 
         return label, result
 
@@ -253,6 +249,7 @@ def launch_parallel_agents(
                 _, result = future.result()
                 results[label] = result
             except Exception:
+                log.exception('Agent %s crashed in _run_one', label)
                 # Agent crashed hard (OOM, segfault). Record synthetic failure
                 # so quorum enforcement can decide whether to retry.
                 results[label] = AgentResult(
