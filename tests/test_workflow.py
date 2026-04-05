@@ -219,6 +219,7 @@ class TestState:
         state = _make_state(s1, s2)
 
         result = find_assignable_story(state)
+        assert result is not None
         assert result.story_id == 'US-001'
 
     def test_find_assignable_story_unblocks_when_dep_completed(self):
@@ -227,6 +228,7 @@ class TestState:
         state = _make_state(s1, s2)
 
         result = find_assignable_story(state)
+        assert result is not None
         assert result.story_id == 'US-002'
 
 
@@ -603,6 +605,7 @@ class TestEditApplication:
         apply_edits(story, ops)
 
         step = story.find_step('step-008')
+        assert step is not None
         assert step.status == StepStatus.skipped
         assert step.skip_reason == 'no redundancy'
 
@@ -630,6 +633,7 @@ class TestEditApplication:
         apply_edits(story, ops)
 
         step = story.find_step('step-004')
+        assert step is not None
         assert step.description == 'Updated description'
 
     def test_apply_restart(self):
@@ -648,6 +652,7 @@ class TestEditApplication:
         apply_edits(story, ops)
 
         step = story.find_step('step-004')
+        assert step is not None
         assert step.status == StepStatus.pending
         assert step.description == 'Try different approach'
         assert step.restart_count == 1
@@ -715,6 +720,7 @@ class TestEditRoundTrip:
         apply_edits(story, ops)
 
         step = story.find_step('step-008')
+        assert step is not None
         assert step.status == StepStatus.skipped
         assert step.skip_reason == 'not needed'
         remove_edit_file('US-001', tmp_path)
@@ -778,6 +784,7 @@ class TestEditRoundTrip:
 
         story = _make_story()
         ops = parse_edit_file('US-001', tmp_path)
+        assert ops is not None
         with pytest.raises(EditValidationError):
             validate_edits(story, ops)
         discard_edit_file('US-001', tmp_path)

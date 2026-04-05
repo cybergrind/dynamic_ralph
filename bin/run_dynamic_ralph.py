@@ -26,6 +26,7 @@ from multi_agent import (
 )
 from multi_agent.workflow.executor import _now_iso, execute_step
 from multi_agent.workflow.models import (
+    HistoryAction,
     HistoryEntry,
     StepStatus,
     StoryStatus,
@@ -72,16 +73,16 @@ def _git_main_branch() -> str:
 
 
 def _add_history(
-    story: StoryWorkflow, action: str, agent_id: int, step_id: str | None = None, **details: object
+    story: StoryWorkflow, action: HistoryAction, agent_id: int, step_id: str | None = None, **details: object
 ) -> None:
     """Append a history entry to a story."""
     story.history.append(
         HistoryEntry(
             timestamp=_now_iso(),
-            action=action,  # type: ignore[arg-type]
+            action=action,
             agent_id=agent_id,
             step_id=step_id,
-            details=details,  # type: ignore[arg-type]
+            details=dict(details),
         )
     )
 

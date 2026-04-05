@@ -30,3 +30,9 @@ repos:
         args: [--fix, --preview]
         types: [python]
       - id: ruff-format
+
+  - repo: https://github.com/facebook/pyrefly-pre-commit
+    rev: 0.59.1
+    hooks:
+      - id: pyrefly-check
+        pass_filenames: false

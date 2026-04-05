@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -97,7 +98,7 @@ class EditValidationError(Exception):
     """Raised when workflow edits fail validation."""
 
 
-def validate_edits(story: StoryWorkflow, operations: list[EditOperation]) -> None:
+def validate_edits(story: StoryWorkflow, operations: Sequence[EditOperation]) -> None:
     """Validate all edit operations against guardrails.
 
     Raises EditValidationError if any operation fails. Validation is atomic —
@@ -189,7 +190,7 @@ def validate_edits(story: StoryWorkflow, operations: list[EditOperation]) -> Non
 # ---------------------------------------------------------------------------
 
 
-def apply_edits(story: StoryWorkflow, operations: list[EditOperation]) -> None:
+def apply_edits(story: StoryWorkflow, operations: Sequence[EditOperation]) -> None:
     """Apply validated edit operations to a story workflow.
 
     Call validate_edits() first — this function assumes validation passed.

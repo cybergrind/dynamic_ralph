@@ -248,6 +248,7 @@ def _launch_agent(
     )
     stderr_thread.start()
 
+    assert process.stdout is not None  # guaranteed by stdout=PIPE
     all_events = []
     start_time = time.monotonic()
     timed_out = False
@@ -256,7 +257,7 @@ def _launch_agent(
 
         def _line_iter():
             """Yield lines from process stdout."""
-            for line in process.stdout:  # type: ignore[union-attr]
+            for line in process.stdout:
                 yield line
 
         for event in backend.parse_events(_line_iter()):

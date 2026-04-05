@@ -261,12 +261,13 @@ def launch_agent(prompt: str, log_path: Path, max_turns: int | None = None) -> A
     )
     stderr_thread.start()
 
+    assert process.stdout is not None  # guaranteed by stdout=PIPE
     all_events: list = []
 
     try:
 
         def _line_iter():
-            for line in process.stdout:  # type: ignore[union-attr]
+            for line in process.stdout:
                 yield line
 
         for event in backend.parse_events(_line_iter()):

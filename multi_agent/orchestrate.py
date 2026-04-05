@@ -288,10 +288,10 @@ def _enforce_quorum(
         )
         return results
 
-    _parent_id = tracing.parent_span_id if tracing else None
+    parent_id = tracing.parent_span_id if tracing else None
     retry_span = (
         tracing.begin(
-            f'{_parent_id}-quorum-retry' if _parent_id else 'quorum-retry',
+            f'{parent_id}-quorum-retry' if parent_id else 'quorum-retry',
             'quorum_retry',
             'quorum-retry',
             failed_agents=list(failed.keys()),
@@ -373,8 +373,8 @@ def run_propose(
     propose_cls = cfg.propose_output_cls or ProposalOutput
     propose_schema = OutputSchema.from_model(propose_cls)
 
-    _parent_id = tracing.parent_span_id if tracing else None
-    phase_span_id = f'{_parent_id}-propose' if _parent_id else 'propose'
+    parent_id = tracing.parent_span_id if tracing else None
+    phase_span_id = f'{parent_id}-propose' if parent_id else 'propose'
     phase_span = tracing.begin(phase_span_id, 'phase', 'propose') if tracing else None
 
     phase_prefix = f'{log_prefix}propose-'
@@ -490,8 +490,8 @@ def run_debate(
             task_instructions=cfg.debate_task,
         )
 
-    _parent_id = tracing.parent_span_id if tracing else None
-    phase_span_id = f'{_parent_id}-debate' if _parent_id else 'debate'
+    parent_id = tracing.parent_span_id if tracing else None
+    phase_span_id = f'{parent_id}-debate' if parent_id else 'debate'
     phase_span = tracing.begin(phase_span_id, 'phase', 'debate') if tracing else None
 
     phase_prefix = f'{log_prefix}debate-'
@@ -585,8 +585,8 @@ def run_vote(
             frame_text=frame_text,
         )
 
-    _parent_id = tracing.parent_span_id if tracing else None
-    phase_span_id = f'{_parent_id}-vote' if _parent_id else 'vote'
+    parent_id = tracing.parent_span_id if tracing else None
+    phase_span_id = f'{parent_id}-vote' if parent_id else 'vote'
     phase_span = tracing.begin(phase_span_id, 'phase', 'vote') if tracing else None
 
     vote_schema = OutputSchema.from_model(VoteOutput, disable_tools=True)
@@ -854,7 +854,7 @@ def run_multi_agent(
             resuming = round_num == start_round and resume_phase is not None
 
             # PROPOSE
-            if resuming and _phase_done(resume_phase, 'propose'):
+            if resuming and resume_phase is not None and _phase_done(resume_phase, 'propose'):
                 proposals = _load_round_proposals(round_dir)
             else:
                 _update_metadata(meta_path, current_round=round_num, current_phase='propose')
@@ -873,7 +873,7 @@ def run_multi_agent(
                 )
 
             # DEBATE
-            if resuming and _phase_done(resume_phase, 'debate'):
+            if resuming and resume_phase is not None and _phase_done(resume_phase, 'debate'):
                 debate_entries = _load_round_debate(round_dir)
             else:
                 _update_metadata(meta_path, current_phase='debate')
@@ -893,7 +893,7 @@ def run_multi_agent(
                 )
 
             # VOTE
-            if resuming and _phase_done(resume_phase, 'vote'):
+            if resuming and resume_phase is not None and _phase_done(resume_phase, 'vote'):
                 votes = _load_round_votes(round_dir, list(proposals.keys()))
             else:
                 _update_metadata(meta_path, current_phase='vote')

@@ -291,7 +291,7 @@ class TestQuorumEnforcement:
         }
         prompts = {'A': 'p', 'B': 'p', 'C': 'p', 'D': 'p'}
 
-        with patch('multi_agent.orchestrate.launch_parallel_agents') as mock_launch:
+        with patch('multi_agent.orchestrate.launch_parallel_agents'):
             merged = _enforce_quorum(
                 results,
                 prompts,
@@ -977,6 +977,8 @@ class TestCLIHelp:
         import importlib.util
 
         spec = importlib.util.spec_from_file_location('orchestrate', ORCHESTRATE_SCRIPT)
+        assert spec is not None
+        assert spec.loader is not None
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
 

@@ -50,7 +50,7 @@ def _bad_text() -> str:
 
 class TestExtractionResult:
     def test_succeeded_true_when_value(self) -> None:
-        r = ExtractionResult(value='x', attempts=[])
+        r = ExtractionResult(value=SimpleModel(winner='A', reason='test'), attempts=[])
         assert r.succeeded is True
 
     def test_succeeded_false_when_none(self) -> None:

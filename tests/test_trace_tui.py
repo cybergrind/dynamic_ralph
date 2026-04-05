@@ -95,7 +95,7 @@ class TestDiscoverRuns:
 
 def _make_two_round_trace(trace_path: Path) -> None:
     """Write a trace with 2 rounds, each containing agent-A with different log paths."""
-    events = []
+    events: list[dict[str, object]] = []
     # Run begin
     events.append(
         {
@@ -242,6 +242,7 @@ class TestAgentSpanStructuredOutput:
 
         spans = load_agent_spans(trace_path)
         assert len(spans) == 1
+        assert spans[0].structured_output is not None
         assert spans[0].structured_output == structured
         assert spans[0].structured_output['winner'] == 'A'
 

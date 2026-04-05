@@ -339,13 +339,13 @@ def _build_app():
             self.query_one('#main-layout').remove_class('hidden')
             self.query_one('#right-pane', OptionList).focus()
 
-        def action_quit(self) -> None:
+        async def action_quit(self) -> None:
             if self._introspecting:
                 self._exit_introspection()
             else:
                 self.exit()
 
-        def action_back(self) -> None:
+        async def action_back(self) -> None:
             if self._introspecting:
                 self._exit_introspection()
 

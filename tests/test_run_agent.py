@@ -136,32 +136,32 @@ class TestParseArgs:
     """Tests for parse_args prompt and -p handling."""
 
     def test_no_args_no_prompt(self):
-        args, extra = parse_args([])
+        args, _extra = parse_args([])
         assert args.prompt is None
         assert args.print_mode is False
 
     def test_positional_prompt(self):
-        args, extra = parse_args(['/multi-agent-fast do something'])
+        args, _extra = parse_args(['/multi-agent-fast do something'])
         assert args.prompt == '/multi-agent-fast do something'
         assert args.print_mode is False
 
     def test_print_mode_short_flag(self):
-        args, extra = parse_args(['-p', 'run tests'])
+        args, _extra = parse_args(['-p', 'run tests'])
         assert args.prompt == 'run tests'
         assert args.print_mode is True
 
     def test_print_mode_long_flag(self):
-        args, extra = parse_args(['--print', 'run tests'])
+        args, _extra = parse_args(['--print', 'run tests'])
         assert args.prompt == 'run tests'
         assert args.print_mode is True
 
     def test_build_with_prompt(self):
-        args, extra = parse_args(['--build', '/multi-agent-fast question'])
+        args, _extra = parse_args(['--build', '/multi-agent-fast question'])
         assert args.build is True
         assert args.prompt == '/multi-agent-fast question'
 
     def test_build_with_print_mode(self):
-        args, extra = parse_args(['--build', '-p', 'do something'])
+        args, _extra = parse_args(['--build', '-p', 'do something'])
         assert args.build is True
         assert args.print_mode is True
         assert args.prompt == 'do something'

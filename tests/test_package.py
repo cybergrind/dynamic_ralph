@@ -7,6 +7,7 @@ import tarfile
 import zipfile
 from functools import lru_cache
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -72,7 +73,7 @@ def sdist_files() -> set[str]:
 class TestWheelContents:
     """Verify the wheel includes required files and excludes unwanted ones."""
 
-    REQUIRED_IN_WHEEL = [
+    REQUIRED_IN_WHEEL: ClassVar[list[str]] = [
         # Python packages
         'multi_agent/__init__.py',
         'multi_agent/docker.py',
@@ -98,7 +99,7 @@ class TestWheelContents:
         'multi_agent/_data/skills/multi-agent/orchestrate.py',
     ]
 
-    FORBIDDEN_PATTERNS_IN_WHEEL = [
+    FORBIDDEN_PATTERNS_IN_WHEEL: ClassVar[list[str]] = [
         '.claude/',
         'tests/',
         '.git/',
@@ -136,7 +137,7 @@ class TestWheelContents:
 class TestSdistContents:
     """Verify the sdist includes source and excludes unwanted files."""
 
-    FORBIDDEN_PATTERNS_IN_SDIST = [
+    FORBIDDEN_PATTERNS_IN_SDIST: ClassVar[list[str]] = [
         '.claude/',
         'run_ralph/',
         '__pycache__/',

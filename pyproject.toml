@@ -37,7 +37,14 @@ packages = ['multi_agent', 'bin']
 
 # installed with: uv sync
 [dependency-groups]
-dev = ['ruff', 'pre-commit>=4.1.0', 'uv>=0.10.2', 'pytest>=8.0', 'pytest-asyncio>=0.24']
+dev = [
+    'ruff',
+    'pre-commit>=4.1.0',
+    'uv>=0.10.2',
+    'pytest>=8.0',
+    'pytest-asyncio>=0.24',
+    "pyrefly>=0.59.1",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = 'auto'
@@ -83,3 +90,9 @@ select = [
 docstring-quotes = 'double'
 inline-quotes = 'single'
 multiline-quotes = 'single'
+
+[tool.pyrefly]
+project-includes = ['multi_agent', 'tests', 'bin']
+python-version = '3.13'
+python-platform = 'linux'
+site-package-path = ['.venv/lib/python3.13/site-packages']

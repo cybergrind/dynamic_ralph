@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Iterator
 from unittest.mock import patch
 
-from multi_agent.backend import AgentEvent, AgentResult, LaunchConfig
+from multi_agent.backend import AgentEvent, AgentResult, LaunchConfig, OutputSchema
 from multi_agent.parallel import (
     _RETAINED_KINDS,
     _SubprocessWatchdog,
@@ -98,9 +98,22 @@ def _make_event_script(*events: dict, sleep_before: float = 0, exit_code: int = 
     return '; '.join(lines)
 
 
-def _cfg(backend: FakeBackend, tmp_path: Path, *, timeout: int = 30, **kw) -> LaunchConfig:
+def _cfg(
+    backend: FakeBackend,
+    tmp_path: Path,
+    *,
+    timeout: float = 30,
+    output_schema: OutputSchema | None = None,
+    log_prefix: str = '',
+) -> LaunchConfig:
     """Shorthand to build LaunchConfig for tests."""
-    return LaunchConfig(backend=backend, log_dir=tmp_path, timeout=timeout, **kw)
+    return LaunchConfig(
+        backend=backend,
+        log_dir=tmp_path,
+        timeout=timeout,
+        output_schema=output_schema,
+        log_prefix=log_prefix,
+    )
 
 
 def _make_hang_script() -> str:
@@ -310,7 +323,7 @@ class TestLaunchParallelAgents:
         """An agent that raises produces a crashed AgentResult."""
 
         class CrashingBackend(FakeBackend):
-            def build_command(self, prompt, *, system_prompt='', max_turns=None):
+            def build_command(self, prompt, *, system_prompt='', max_turns=None, output_schema=None):
                 # Return a command that does not exist to trigger an exception
                 return ['__nonexistent_binary_12345__']
 

@@ -1,7 +1,10 @@
 """Exclusive file lock using fcntl."""
 
+from __future__ import annotations
+
 import fcntl
 import time
+from typing import IO
 
 
 class FileLockTimeout(TimeoutError):
@@ -18,11 +21,11 @@ class FileLock:
         poll_interval: Seconds between lock-acquisition retries (default 0.1).
     """
 
-    def __init__(self, path: str, timeout: int | None = None, *, poll_interval: float = 0.1):
+    def __init__(self, path: str, timeout: float | None = None, *, poll_interval: float = 0.1):
         self.path = path
         self.timeout = timeout
         self._poll_interval = poll_interval
-        self.fd = None
+        self.fd: IO[str] | None = None
 
     def __enter__(self):
         self.fd = open(self.path, 'w')
@@ -41,6 +44,7 @@ class FileLock:
             fcntl.lockf(self.fd, fcntl.LOCK_EX)
         return self
 
-    def __exit__(self, *exc):
+    def __exit__(self, *exc: object) -> None:
+        assert self.fd is not None, 'FileLock.__exit__ called without __enter__'
         fcntl.lockf(self.fd, fcntl.LOCK_UN)
         self.fd.close()

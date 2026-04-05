@@ -11,7 +11,7 @@ import json
 import sys
 from typing import Iterator
 
-from multi_agent.backend import AgentEvent, AgentResult
+from multi_agent.backend import AgentEvent, AgentResult, OutputSchema
 from multi_agent.constants import GIT_EMAIL, RALPH_IMAGE, RALPH_MODE, get_git_author_identity
 from multi_agent.docker import build_image, docker_sock_gid, host_claude_paths, image_exists
 
@@ -37,7 +37,7 @@ class ClaudeCodeBackend:
         *,
         system_prompt: str = '',
         max_turns: int | None = None,
-        output_schema: 'OutputSchema | None' = None,
+        output_schema: OutputSchema | None = None,
     ) -> list[str]:
 
         cmd: list[str] = [

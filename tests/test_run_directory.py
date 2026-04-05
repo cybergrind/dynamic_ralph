@@ -11,6 +11,8 @@ import pytest
 # Import from the bin script using the same pattern as test_summary_log.py
 _bin_path = Path(__file__).resolve().parent.parent / 'bin' / 'run_dynamic_ralph.py'
 _spec = importlib.util.spec_from_file_location('run_dynamic_ralph', _bin_path)
+assert _spec is not None
+assert _spec.loader is not None
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 

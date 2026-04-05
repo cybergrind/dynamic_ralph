@@ -113,7 +113,7 @@ class LaunchConfig:
     log_dir: Path
     backend: AgentBackend | None = None
     max_turns: int = 10
-    timeout: int = 900
+    timeout: float = 900
     log_prefix: str = ''
     output_schema: OutputSchema | None = None
 

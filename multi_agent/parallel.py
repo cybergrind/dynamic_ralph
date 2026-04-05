@@ -105,30 +105,30 @@ def launch_parallel_agents(
     real claude -p processes.
     """
 
-    _backend = config.backend or get_backend()
+    backend = config.backend or get_backend()
 
     # Fast path: TestingBackend bypasses subprocess overhead
     from multi_agent.testing import TestingBackend
 
-    if isinstance(_backend, TestingBackend):
+    if isinstance(backend, TestingBackend):
         results: dict[str, AgentResult] = {}
         for label in prompts:
             try:
-                results[label] = _backend.get_result(label)
+                results[label] = backend.get_result(label)
             except KeyError:
                 results[label] = AgentResult(exit_code=1, completion_status='crashed')
         return results
 
-    agent_env = _backend.env_filter(dict(os.environ))
+    agent_env = backend.env_filter(dict(os.environ))
 
     def _run_one(label: str, prompt: str) -> tuple[str, AgentResult]:
-        cmd = _backend.build_command(prompt, max_turns=config.max_turns, output_schema=config.output_schema)
+        cmd = backend.build_command(prompt, max_turns=config.max_turns, output_schema=config.output_schema)
         log_path = config.log_dir / f'{config.log_prefix}{label}.jsonl'
 
-        _parent_id = tracing.parent_span_id if tracing else None
-        span_id = f'{_parent_id}-{label}' if _parent_id else f'agent-{label}'
-        _identity_names = tracing.identity_names if tracing else None
-        identity = _identity_names.get(label) if _identity_names else None
+        parent_id = tracing.parent_span_id if tracing else None
+        span_id = f'{parent_id}-{label}' if parent_id else f'agent-{label}'
+        id_names = tracing.identity_names if tracing else None
+        identity = id_names.get(label) if id_names else None
         span_details: dict[str, object] = {'log_path': str(log_path)}
         if identity:
             span_details['identity'] = identity
@@ -176,11 +176,12 @@ def launch_parallel_agents(
             )
             stderr_thread.start()
 
+            assert proc.stdout is not None  # guaranteed by stdout=PIPE
             all_events: list[AgentEvent] = []
             event_count = 0
             last_progress = _time.monotonic()
 
-            for event in _backend.parse_events(iter(proc.stdout)):
+            for event in backend.parse_events(iter(proc.stdout)):
                 # Write ALL events to disk log for post-mortem analysis
                 if event.raw:
                     log_file.write(json.dumps(event.raw) + '\n')
@@ -221,7 +222,7 @@ def launch_parallel_agents(
                 stderr_log_file.close()
 
         timed_out = watchdog.fired if watchdog else False
-        result = _backend.extract_result(all_events, proc.returncode or 0)
+        result = backend.extract_result(all_events, proc.returncode or 0)
         result.timed_out = timed_out
 
         if tracing and trace_span:

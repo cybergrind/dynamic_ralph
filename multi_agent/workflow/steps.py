@@ -41,7 +41,7 @@ STEP_ALLOWS_EDITING: dict[StepType, bool] = {
 # Steps that cannot be removed or skipped
 # ---------------------------------------------------------------------------
 
-MANDATORY_STEPS: set[StepType] = {}
+MANDATORY_STEPS: set[StepType] = set()
 
 # ---------------------------------------------------------------------------
 # Workflow limits
