@@ -20,7 +20,7 @@ import time as _time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from multi_agent.backend import AgentBackend, AgentEvent, AgentResult, get_backend
+from multi_agent.backend import AgentBackend, AgentEvent, AgentResult, OutputSchema, get_backend
 from multi_agent.constants import MULTI_AGENT_MAX_WORKERS
 
 
@@ -104,7 +104,7 @@ def launch_parallel_agents(
     timeout: int = 900,
     log_dir: Path,
     log_prefix: str = '',
-    json_schema: dict | None = None,
+    output_schema: OutputSchema | None = None,
     tracer: TraceWriter | None = None,
     trace_parent_id: str | None = None,
 ) -> dict[str, AgentResult]:
@@ -126,7 +126,7 @@ def launch_parallel_agents(
     agent_env = {k: v for k, v in os.environ.items() if k != 'CLAUDECODE'}
 
     def _run_one(label: str, prompt: str) -> tuple[str, AgentResult]:
-        cmd = backend.build_command(prompt, max_turns=max_turns, json_schema=json_schema)
+        cmd = backend.build_command(prompt, max_turns=max_turns, output_schema=output_schema)
         log_path = log_dir / f'{log_prefix}{label}.jsonl'
 
         span_id = f'{trace_parent_id}-{label}' if trace_parent_id else f'agent-{label}'

@@ -73,6 +73,51 @@ class TestAgentResult:
 
 
 # ---------------------------------------------------------------------------
+# OutputSchema tests
+# ---------------------------------------------------------------------------
+
+
+class TestOutputSchema:
+    def test_defaults(self):
+        from multi_agent.backend import OutputSchema
+
+        schema = {'type': 'object', 'properties': {'winner': {'type': 'string'}}}
+        os = OutputSchema(json_schema=schema)
+        assert os.json_schema == schema
+        assert os.disable_tools is False
+
+    def test_disable_tools_true(self):
+        from multi_agent.backend import OutputSchema
+
+        schema = {'type': 'object'}
+        os = OutputSchema(json_schema=schema, disable_tools=True)
+        assert os.disable_tools is True
+
+    def test_frozen(self):
+        from multi_agent.backend import OutputSchema
+
+        os = OutputSchema(json_schema={'type': 'object'})
+        with pytest.raises(AttributeError):
+            os.disable_tools = True  # type: ignore[misc]
+
+    def test_from_model(self):
+        from multi_agent.backend import OutputSchema
+        from multi_agent.parsing import VoteOutput
+
+        os = OutputSchema.from_model(VoteOutput)
+        assert 'winner' in os.json_schema.get('properties', {})
+        assert os.disable_tools is False
+
+    def test_from_model_with_disable_tools(self):
+        from multi_agent.backend import OutputSchema
+        from multi_agent.parsing import VoteOutput
+
+        os = OutputSchema.from_model(VoteOutput, disable_tools=True)
+        assert 'winner' in os.json_schema.get('properties', {})
+        assert os.disable_tools is True
+
+
+# ---------------------------------------------------------------------------
 # Backend registry tests
 # ---------------------------------------------------------------------------
 
@@ -116,7 +161,7 @@ class TestAgentBackendProtocol:
 
     def test_custom_class_satisfies_protocol(self):
         class DummyBackend:
-            def build_command(self, prompt, *, system_prompt='', max_turns=None, json_schema=None):
+            def build_command(self, prompt, *, system_prompt='', max_turns=None, output_schema=None):
                 return ['echo', prompt]
 
             def build_docker_command(self, base_cmd, *, agent_id, workspace):
@@ -163,60 +208,71 @@ class TestClaudeCodeBuildCommand:
         idx = cmd.index('--max-turns')
         assert cmd[idx + 1] == '10'
 
-    def test_json_schema_none_backward_compat(self):
-        backend = ClaudeCodeBackend()
-        cmd = backend.build_command('task', json_schema=None)
-        assert '--json-schema' not in cmd
-        assert cmd[-1] == 'task'
 
+class TestClaudeCodeOutputSchema:
+    """Tests for OutputSchema → CLI flag generation."""
 
-class TestClaudeCodeJsonSchema:
-    """Tests for --json-schema structured output flag generation."""
+    def test_output_schema_adds_json_schema_flag(self):
+        from multi_agent.backend import OutputSchema
 
-    def test_json_schema_adds_flag(self):
         backend = ClaudeCodeBackend()
         schema = {'type': 'object', 'properties': {'winner': {'type': 'string'}}}
-        cmd = backend.build_command('task', json_schema=schema)
+        cmd = backend.build_command('task', output_schema=OutputSchema(json_schema=schema))
         assert '--json-schema' in cmd
         idx = cmd.index('--json-schema')
         assert json.loads(cmd[idx + 1]) == schema
 
-    def test_json_schema_disables_other_tools(self):
-        """--tools "" forces agent to only use StructuredOutput (bypass prevention)."""
-        backend = ClaudeCodeBackend()
-        schema = {'type': 'object', 'properties': {'w': {'type': 'string'}}}
-        cmd = backend.build_command('task', json_schema=schema)
-        assert '--tools' in cmd
-        idx = cmd.index('--tools')
-        assert cmd[idx + 1] == ''
+    def test_output_schema_without_disable_tools_keeps_all_tools(self):
+        """Propose/debate: structured output + all tools available.
 
-    def test_no_json_schema_no_extra_flags(self):
+        This test prevents the original bug where --json-schema always
+        added --tools "" which silently broke propose/debate.
+        """
+        from multi_agent.backend import OutputSchema
+
+        backend = ClaudeCodeBackend()
+        os = OutputSchema(json_schema={'type': 'object', 'properties': {'summary': {'type': 'string'}}})
+        cmd = backend.build_command('task', output_schema=os)
+        assert '--json-schema' in cmd
+        assert '--tools' not in cmd
+
+    def test_output_schema_with_disable_tools(self):
+        """Vote: structured output + only StructuredOutput tool."""
+        from multi_agent.backend import OutputSchema
+
+        backend = ClaudeCodeBackend()
+        os = OutputSchema(json_schema={'type': 'object'}, disable_tools=True)
+        cmd = backend.build_command('task', output_schema=os)
+        assert '--json-schema' in cmd
+        assert '--tools=' in cmd
+
+    def test_no_output_schema_no_extra_flags(self):
         backend = ClaudeCodeBackend()
         cmd = backend.build_command('task')
         assert '--json-schema' not in cmd
         assert '--tools' not in cmd
 
-    def test_json_schema_works_with_any_model(self):
-        """Mechanism is model-agnostic — any schema dict produces the same flags."""
+    def test_output_schema_works_with_any_model(self):
+        """Mechanism is model-agnostic."""
+        from multi_agent.backend import OutputSchema
+
         backend = ClaudeCodeBackend()
-        # Arbitrary non-vote schema
         schema = {
             'type': 'object',
-            'properties': {
-                'summary': {'type': 'string'},
-                'verdict': {'type': 'string'},
-            },
+            'properties': {'summary': {'type': 'string'}, 'verdict': {'type': 'string'}},
             'required': ['summary', 'verdict'],
         }
-        cmd = backend.build_command('review this', json_schema=schema)
+        cmd = backend.build_command('review this', output_schema=OutputSchema(json_schema=schema))
         assert '--json-schema' in cmd
         idx = cmd.index('--json-schema')
         assert json.loads(cmd[idx + 1]) == schema
 
-    def test_prompt_remains_last_arg_with_json_schema(self):
+    def test_prompt_remains_last_arg(self):
+        from multi_agent.backend import OutputSchema
+
         backend = ClaudeCodeBackend()
-        schema = {'type': 'object', 'properties': {'x': {'type': 'string'}}}
-        cmd = backend.build_command('my prompt', json_schema=schema)
+        os = OutputSchema(json_schema={'type': 'object'})
+        cmd = backend.build_command('my prompt', output_schema=os)
         assert cmd[-1] == 'my prompt'
 
 

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from multi_agent.backend import AgentBackend, AgentResult
+from multi_agent.backend import AgentBackend, AgentResult, OutputSchema
 from multi_agent.codex_prompts import (
     IDENTITIES_DIR,
     build_debate_prompt,
@@ -30,7 +30,9 @@ from multi_agent.codex_prompts import (
 from multi_agent.extract import ExtractionResult, extract
 from multi_agent.parallel import launch_parallel_agents
 from multi_agent.parsing import (
+    DebateOutput,
     ParseDiagnostic,
+    ProposalOutput,
     VoteOutput,
     VoteResult,
     _parse_concerns,
@@ -83,6 +85,10 @@ class PhaseConfig:
     vote_task: str | None = None
     # Custom proposal sections for parsing (None = use default)
     proposal_sections: list[str] | None = None
+    # Pydantic model classes for structured output (None = use defaults)
+    # Must have to_markdown() -> str method
+    propose_output_cls: type | None = None
+    debate_output_cls: type | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +259,9 @@ def _load_round_votes(round_dir: Path, valid_proposals: list[str]) -> dict[str, 
 
 def _agent_succeeded(result: AgentResult) -> bool:
     """Return True if the agent produced a usable response."""
-    return result.exit_code == 0 and not result.timed_out and bool(result.full_response.strip())
+    if result.exit_code != 0 or result.timed_out:
+        return False
+    return bool(result.full_response.strip()) or result.structured_output is not None
 
 
 def _enforce_quorum(
@@ -266,7 +274,7 @@ def _enforce_quorum(
     log_dir: Path,
     log_prefix: str = '',
     quorum_min: int = QUORUM_MIN,
-    json_schema: dict | None = None,
+    output_schema: OutputSchema | None = None,
     tracer: TraceWriter | None = None,
     trace_parent_id: str | None = None,
 ) -> dict[str, AgentResult]:
@@ -307,7 +315,7 @@ def _enforce_quorum(
         timeout=timeout,
         log_dir=log_dir,
         log_prefix=f'{log_prefix}retry-',
-        json_schema=json_schema,
+        output_schema=output_schema,
         tracer=tracer,
         trace_parent_id=retry_span.span_id if retry_span else None,
     )
@@ -365,6 +373,9 @@ def run_propose(
             task_instructions=cfg.propose_task,
         )
 
+    propose_cls = cfg.propose_output_cls or ProposalOutput
+    propose_schema = OutputSchema.from_model(propose_cls)
+
     phase_span_id = f'{trace_parent_id}-propose' if trace_parent_id else 'propose'
     phase_span = tracer.begin(phase_span_id, 'phase', 'propose', parent_id=trace_parent_id) if tracer else None
 
@@ -376,6 +387,7 @@ def run_propose(
         timeout=cfg.propose_timeout,
         log_dir=log_dir,
         log_prefix=phase_prefix,
+        output_schema=propose_schema,
         tracer=tracer,
         trace_parent_id=phase_span_id if tracer else None,
     )
@@ -388,6 +400,7 @@ def run_propose(
         log_dir=log_dir,
         log_prefix=phase_prefix,
         quorum_min=cfg.quorum_min,
+        output_schema=propose_schema,
         tracer=tracer,
         trace_parent_id=phase_span_id if tracer else None,
     )
@@ -403,6 +416,29 @@ def run_propose(
     for label in sorted(results.keys()):
         result = results[label]
         text = result.full_response
+
+        # Try structured output first → render as markdown
+        so = result.structured_output
+        if so is not None:
+            try:
+                po = propose_cls.model_validate(so)
+                proposals[label] = po.to_markdown()
+                (proposals_dir / f'agent-{label}.md').write_text(po.to_markdown())
+                (proposals_dir / f'agent-{label}.json').write_text(json.dumps(so, indent=2))
+                diagnostics.append(
+                    ParseDiagnostic(
+                        agent_label=label,
+                        phase='propose',
+                        sections_found=list(so.keys()),
+                        sections_missing=[],
+                        parse_succeeded=True,
+                    )
+                )
+                continue
+            except Exception as exc:
+                log.warning('Agent %s structured_output validation failed: %s', label, exc)
+
+        # Fallback: parse raw markdown
         sections, diag = parse_proposal(text, agent_label=label, required_sections=cfg.proposal_sections)
         diagnostics.append(diag)
 
@@ -445,6 +481,9 @@ def run_debate(
     Writes agent-{label}.md and all-debate.md to round_dir/debate/.
     """
     cfg = phase_config or PhaseConfig()
+    debate_cls = cfg.debate_output_cls or DebateOutput
+    debate_schema = OutputSchema.from_model(debate_cls)
+
     label_map = _assign_labels(list(identity_texts.keys()))
     all_proposals_text = concatenate_proposals(proposals)
     prompts: dict[str, str] = {}
@@ -469,6 +508,7 @@ def run_debate(
         timeout=cfg.debate_timeout,
         log_dir=log_dir,
         log_prefix=phase_prefix,
+        output_schema=debate_schema,
         tracer=tracer,
         trace_parent_id=phase_span_id if tracer else None,
     )
@@ -481,6 +521,7 @@ def run_debate(
         log_dir=log_dir,
         quorum_min=cfg.quorum_min,
         log_prefix=phase_prefix,
+        output_schema=debate_schema,
         tracer=tracer,
         trace_parent_id=phase_span_id if tracer else None,
     )
@@ -494,6 +535,20 @@ def run_debate(
     debate_entries: dict[str, str] = {}
     for label in sorted(results.keys()):
         result = results[label]
+
+        # Try structured output first → render as markdown
+        so = result.structured_output
+        if so is not None:
+            try:
+                do = debate_cls.model_validate(so)
+                debate_entries[label] = do.to_markdown()
+                (debate_dir / f'agent-{label}.md').write_text(do.to_markdown())
+                (debate_dir / f'agent-{label}.json').write_text(json.dumps(so, indent=2))
+                continue
+            except Exception as exc:
+                log.warning('Agent %s debate structured_output validation failed: %s', label, exc)
+
+        # Fallback: use raw text
         debate_entries[label] = result.full_response
         (debate_dir / f'agent-{label}.md').write_text(result.full_response)
 
@@ -544,7 +599,7 @@ def run_vote(
     phase_span_id = f'{trace_parent_id}-vote' if trace_parent_id else 'vote'
     phase_span = tracer.begin(phase_span_id, 'phase', 'vote', parent_id=trace_parent_id) if tracer else None
 
-    vote_schema = VoteOutput.model_json_schema()
+    vote_schema = OutputSchema.from_model(VoteOutput, disable_tools=True)
 
     phase_prefix = f'{log_prefix}vote-'
     results = launch_parallel_agents(
@@ -554,7 +609,7 @@ def run_vote(
         timeout=cfg.vote_timeout,
         log_dir=log_dir,
         log_prefix=phase_prefix,
-        json_schema=vote_schema,
+        output_schema=vote_schema,
         tracer=tracer,
         trace_parent_id=phase_span_id if tracer else None,
     )
@@ -567,7 +622,7 @@ def run_vote(
         log_dir=log_dir,
         log_prefix=phase_prefix,
         quorum_min=cfg.quorum_min,
-        json_schema=vote_schema,
+        output_schema=vote_schema,
         tracer=tracer,
         trace_parent_id=phase_span_id if tracer else None,
     )
@@ -586,7 +641,7 @@ def run_vote(
                 timeout=cfg.vote_timeout,
                 log_dir=log_dir,
                 log_prefix=f'{phase_prefix}retry-{label}-',
-                json_schema=vote_schema,
+                output_schema=vote_schema,
             )
             return retry[label]
 

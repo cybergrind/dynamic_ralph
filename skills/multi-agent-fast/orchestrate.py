@@ -9,6 +9,7 @@ import logging
 from pathlib import Path
 
 from multi_agent.orchestrate import PhaseConfig, run_multi_agent
+from multi_agent.parsing import FastProposalOutput
 
 
 _FAST_CODEX = (Path(__file__).resolve().parent / 'fast_codex.md').read_text()
@@ -89,6 +90,7 @@ FAST_PHASE_CONFIG = PhaseConfig(
     debate_task=_FAST_DEBATE_TASK,
     vote_task=_FAST_VOTE_TASK,
     proposal_sections=_FAST_PROPOSAL_SECTIONS,
+    propose_output_cls=FastProposalOutput,
 )
 
 

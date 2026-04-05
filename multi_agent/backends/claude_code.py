@@ -29,8 +29,9 @@ class ClaudeCodeBackend:
         *,
         system_prompt: str = '',
         max_turns: int | None = None,
-        json_schema: dict | None = None,
+        output_schema: 'OutputSchema | None' = None,
     ) -> list[str]:
+
         cmd: list[str] = [
             'npx',
             '@anthropic-ai/claude-code',
@@ -46,9 +47,10 @@ class ClaudeCodeBackend:
             cmd.extend(['--append-system-prompt', system_prompt])
         if max_turns is not None:
             cmd.extend(['--max-turns', str(max_turns)])
-        if json_schema is not None:
-            cmd.extend(['--json-schema', json.dumps(json_schema)])
-            cmd.extend(['--tools', ''])
+        if output_schema is not None:
+            cmd.extend(['--json-schema', json.dumps(output_schema.json_schema)])
+            if output_schema.disable_tools:
+                cmd.append('--tools=')
         cmd.append(prompt)
         return cmd
 

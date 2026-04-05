@@ -14,6 +14,8 @@ import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Iterator, Protocol, runtime_checkable
 
+from pydantic import BaseModel
+
 
 if TYPE_CHECKING:
     pass
@@ -51,6 +53,32 @@ class AgentEvent:
     kind: str
     text: str = ''
     raw: dict = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# OutputSchema — structured output configuration
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class OutputSchema:
+    """Structured output configuration for an agent invocation.
+
+    Constructed from a Pydantic model class.  The backend translates this
+    into CLI flags (e.g. ``--json-schema`` for Claude Code).
+
+    ``disable_tools=True`` restricts the agent to *only* produce structured
+    output (no file reads, commands, etc.).  Use for vote-like phases where
+    the agent just needs to fill in fields.
+    """
+
+    json_schema: dict
+    disable_tools: bool = False
+
+    @staticmethod
+    def from_model(model_cls: type[BaseModel], *, disable_tools: bool = False) -> 'OutputSchema':
+        """Create from a Pydantic model class."""
+        return OutputSchema(json_schema=model_cls.model_json_schema(), disable_tools=disable_tools)
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +134,7 @@ class AgentBackend(Protocol):
         *,
         system_prompt: str = '',
         max_turns: int | None = None,
-        json_schema: dict | None = None,
+        output_schema: OutputSchema | None = None,
     ) -> list[str]:
         """Return the command-line argv for a direct (non-Docker) invocation."""
         ...

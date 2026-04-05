@@ -64,6 +64,62 @@ class VoteResult:
 # Pydantic output models
 # ---------------------------------------------------------------------------
 
+
+class ProposalOutput(BaseModel):
+    """Structured output for the PROPOSE phase (default sections)."""
+
+    summary: str
+    code_sketch: str
+    files_changed: str
+    migration_plan: str
+    what_id_argue: str
+    what_worries_me: str
+
+    def to_markdown(self) -> str:
+        return (
+            f'## Summary\n\n{self.summary}\n\n'
+            f'## Code sketch\n\n{self.code_sketch}\n\n'
+            f'## Files changed\n\n{self.files_changed}\n\n'
+            f'## Migration plan\n\n{self.migration_plan}\n\n'
+            f"## What I'd argue\n\n{self.what_id_argue}\n\n"
+            f'## What worries me\n\n{self.what_worries_me}'
+        )
+
+
+class FastProposalOutput(BaseModel):
+    """Structured output for the PROPOSE phase (fast variant sections)."""
+
+    summary: str
+    approach: str
+    strengths: str
+    weaknesses: str
+
+    def to_markdown(self) -> str:
+        return (
+            f'## Summary\n\n{self.summary}\n\n'
+            f'## Approach\n\n{self.approach}\n\n'
+            f'## Strengths\n\n{self.strengths}\n\n'
+            f'## Weaknesses\n\n{self.weaknesses}'
+        )
+
+
+class DebateOutput(BaseModel):
+    """Structured output for the DEBATE phase."""
+
+    my_case: str
+    challenges_to_other_proposals: str
+    what_id_adopt_from_others: str
+    my_biggest_doubt: str
+
+    def to_markdown(self) -> str:
+        return (
+            f'## My case\n\n{self.my_case}\n\n'
+            f'## Challenges to other proposals\n\n{self.challenges_to_other_proposals}\n\n'
+            f"## What I'd adopt from others\n\n{self.what_id_adopt_from_others}\n\n"
+            f'## My biggest doubt\n\n{self.my_biggest_doubt}'
+        )
+
+
 _MARKDOWN_STRIP_RE = re.compile(r'^[\*_`]+(.+?)[\*_`]+$')
 _PROPOSAL_PREFIX_RE = re.compile(r'^proposal\s+', re.IGNORECASE)
 

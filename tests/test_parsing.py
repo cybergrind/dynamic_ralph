@@ -752,3 +752,143 @@ class TestVoteOutput:
         )
         assert vo.unrefuted_arguments == ''
         assert vo.merge_suggestion == ''
+
+
+class TestProposalOutput:
+    """Tests for ProposalOutput Pydantic model and to_markdown()."""
+
+    def test_to_markdown_has_all_sections(self) -> None:
+        from multi_agent.parsing import ProposalOutput
+
+        po = ProposalOutput(
+            summary='A simple REST API',
+            code_sketch='```python\ndef handler(): pass\n```',
+            files_changed='src/api.py',
+            migration_plan='No migration needed',
+            what_id_argue='Simplicity wins',
+            what_worries_me='Scale concerns',
+        )
+        md = po.to_markdown()
+        assert '## Summary' in md
+        assert 'A simple REST API' in md
+        assert '## Code sketch' in md
+        assert '```python' in md
+        assert '## Files changed' in md
+        assert '## Migration plan' in md
+        assert "## What I'd argue" in md
+        assert '## What worries me' in md
+
+    def test_to_markdown_round_trips_through_parse_proposal(self) -> None:
+        """to_markdown() output can be parsed back by parse_proposal()."""
+        from multi_agent.parsing import ProposalOutput, parse_proposal
+
+        po = ProposalOutput(
+            summary='Build a cache layer',
+            code_sketch='```python\ncache = {}\n```',
+            files_changed='src/cache.py',
+            migration_plan='Add redis dependency',
+            what_id_argue='Performance boost',
+            what_worries_me='Invalidation complexity',
+        )
+        md = po.to_markdown()
+        sections, diag = parse_proposal(md, agent_label='test')
+        assert sections is not None, f'parse_proposal failed: {diag.sections_missing}'
+        assert diag.parse_succeeded
+
+    def test_model_json_schema_has_required_fields(self) -> None:
+        from multi_agent.parsing import ProposalOutput
+
+        schema = ProposalOutput.model_json_schema()
+        props = schema.get('properties', {})
+        assert 'summary' in props
+        assert 'code_sketch' in props
+        assert 'files_changed' in props
+        assert 'migration_plan' in props
+        assert 'what_id_argue' in props
+        assert 'what_worries_me' in props
+
+    def test_validates_structured_output(self) -> None:
+        from multi_agent.parsing import ProposalOutput
+
+        data = {
+            'summary': 'REST API',
+            'code_sketch': 'def main(): pass',
+            'files_changed': 'main.py',
+            'migration_plan': 'None',
+            'what_id_argue': 'Simple',
+            'what_worries_me': 'Nothing',
+        }
+        po = ProposalOutput.model_validate(data)
+        assert po.summary == 'REST API'
+
+
+class TestDebateOutput:
+    """Tests for DebateOutput Pydantic model and to_markdown()."""
+
+    def test_to_markdown_has_all_sections(self) -> None:
+        from multi_agent.parsing import DebateOutput
+
+        do = DebateOutput(
+            my_case='Proposal A is best because...',
+            challenges_to_other_proposals='Proposal B has scaling issues',
+            what_id_adopt_from_others='Error handling from C',
+            my_biggest_doubt='Whether it works at scale',
+        )
+        md = do.to_markdown()
+        assert '## My case' in md
+        assert 'Proposal A is best' in md
+        assert '## Challenges to other proposals' in md
+        assert "## What I'd adopt from others" in md
+        assert '## My biggest doubt' in md
+
+    def test_model_json_schema_has_required_fields(self) -> None:
+        from multi_agent.parsing import DebateOutput
+
+        schema = DebateOutput.model_json_schema()
+        props = schema.get('properties', {})
+        assert 'my_case' in props
+        assert 'challenges_to_other_proposals' in props
+        assert 'what_id_adopt_from_others' in props
+        assert 'my_biggest_doubt' in props
+
+    def test_validates_structured_output(self) -> None:
+        from multi_agent.parsing import DebateOutput
+
+        data = {
+            'my_case': 'Strong argument',
+            'challenges_to_other_proposals': 'Weak points',
+            'what_id_adopt_from_others': 'Good error handling',
+            'my_biggest_doubt': 'Scale',
+        }
+        do = DebateOutput.model_validate(data)
+        assert do.my_case == 'Strong argument'
+
+
+class TestFastProposalOutput:
+    """Tests for FastProposalOutput (fast variant sections)."""
+
+    def test_to_markdown_has_fast_sections(self) -> None:
+        from multi_agent.parsing import FastProposalOutput
+
+        fpo = FastProposalOutput(
+            summary='Quick REST API',
+            approach='Use FastAPI framework',
+            strengths='Fast development',
+            weaknesses='Less control',
+        )
+        md = fpo.to_markdown()
+        assert '## Summary' in md
+        assert '## Approach' in md
+        assert '## Strengths' in md
+        assert '## Weaknesses' in md
+        assert 'Quick REST API' in md
+
+    def test_model_json_schema_has_required_fields(self) -> None:
+        from multi_agent.parsing import FastProposalOutput
+
+        schema = FastProposalOutput.model_json_schema()
+        props = schema.get('properties', {})
+        assert 'summary' in props
+        assert 'approach' in props
+        assert 'strengths' in props
+        assert 'weaknesses' in props

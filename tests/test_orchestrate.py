@@ -14,7 +14,9 @@ from multi_agent.orchestrate import (
     _agent_succeeded,
     _enforce_quorum,
     _select_identities,
+    run_debate,
     run_multi_agent,
+    run_propose,
     run_vote,
     validate_frame,
 )
@@ -225,6 +227,16 @@ class TestAgentSucceeded:
         r = _make_result('')
         assert _agent_succeeded(r) is False
 
+    def test_structured_output_with_empty_text_succeeds(self) -> None:
+        """Agent that uses StructuredOutput may produce empty full_response.
+
+        This is the normal case for json_schema agents — they call
+        StructuredOutput directly without writing assistant text.
+        """
+        r = _make_result('')
+        r.structured_output = {'winner': 'A', 'reason': 'best'}
+        assert _agent_succeeded(r) is True
+
     def test_whitespace_only_response_fails(self) -> None:
         r = _make_result('   \n\t  ')
         assert _agent_succeeded(r) is False
@@ -298,15 +310,17 @@ class TestQuorumEnforcement:
         # Quorum already met (3 succeeded), retry still happens but result is fine
         assert merged['A'].full_response == 'ok'
 
-    def test_enforce_quorum_passes_json_schema(self, tmp_path: Path) -> None:
-        """json_schema is forwarded to launch_parallel_agents on retry."""
+    def test_enforce_quorum_passes_output_schema(self, tmp_path: Path) -> None:
+        """output_schema is forwarded to launch_parallel_agents on retry."""
+        from multi_agent.backend import OutputSchema
+
         results = {
             'A': _make_result('ok'),
             'B': _make_result('ok'),
             'C': _make_result('fail', exit_code=1),
         }
         prompts = {'A': 'p', 'B': 'p', 'C': 'p'}
-        schema = {'type': 'object', 'properties': {'winner': {'type': 'string'}}}
+        schema = OutputSchema(json_schema={'type': 'object'})
 
         with patch('multi_agent.orchestrate.launch_parallel_agents', return_value={'C': _make_result('ok')}) as mock:
             _enforce_quorum(
@@ -316,11 +330,11 @@ class TestQuorumEnforcement:
                 max_turns=3,
                 timeout=300,
                 log_dir=tmp_path,
-                json_schema=schema,
+                output_schema=schema,
             )
 
         mock.assert_called_once()
-        assert mock.call_args.kwargs.get('json_schema') == schema
+        assert mock.call_args.kwargs.get('output_schema') is schema
 
     def test_below_quorum_after_retry_raises(self, tmp_path: Path) -> None:
         """3+ agents fail even after retry -> RuntimeError raised."""
@@ -628,7 +642,7 @@ class TestRunVoteStructuredOutput:
         log_dir.mkdir(parents=True)
         return labels, proposals, identity_texts, frame, debate_entries, round_dir, log_dir
 
-    def test_run_vote_passes_json_schema(self, tmp_path: Path) -> None:
+    def test_run_vote_passes_output_schema(self, tmp_path: Path) -> None:
         """run_vote passes VoteOutput JSON schema to launch_parallel_agents."""
         labels, proposals, identity_texts, frame, debate_entries, round_dir, log_dir = self._setup(tmp_path)
 
@@ -647,11 +661,11 @@ class TestRunVoteStructuredOutput:
 
         # First call is the main launch (not quorum retry)
         call_kwargs = mock.call_args_list[0].kwargs
-        assert 'json_schema' in call_kwargs
-        schema = call_kwargs['json_schema']
-        assert 'winner' in schema.get('properties', {})
-        assert 'decisive_argument' in schema.get('properties', {})
-        assert 'concerns_about_the_winner' in schema.get('properties', {})
+        assert 'output_schema' in call_kwargs
+        os = call_kwargs['output_schema']
+        assert os.disable_tools is True  # vote disables tools!
+        assert 'winner' in os.json_schema.get('properties', {})
+        assert 'decisive_argument' in os.json_schema.get('properties', {})
 
     def test_run_vote_reads_structured_output(self, tmp_path: Path) -> None:
         """Agents with structured_output are parsed correctly even if full_response is garbage."""
@@ -756,6 +770,206 @@ class TestRunVoteStructuredOutput:
 
         assert len(votes) == 0
         assert any('quorum' in r.message.lower() for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# TestRunProposeStructuredOutput
+# ---------------------------------------------------------------------------
+
+
+class TestRunProposeStructuredOutput:
+    """Verify run_propose() integrates with structured output."""
+
+    def _setup(self, tmp_path):
+        labels = ['A', 'B', 'C', 'D', 'E']
+        identity_texts = {f'i_{lbl.lower()}.md': f'You are agent {lbl}.' for lbl in labels}
+        frame = _make_frame(identities=list(identity_texts.keys()))
+        round_dir = tmp_path / 'round-1'
+        round_dir.mkdir(parents=True)
+        log_dir = tmp_path / 'logs'
+        log_dir.mkdir(parents=True)
+        return labels, identity_texts, frame, round_dir, log_dir
+
+    def test_run_propose_passes_output_schema(self, tmp_path: Path) -> None:
+        """run_propose passes ProposalOutput JSON schema to launch_parallel_agents."""
+        labels, identity_texts, frame, round_dir, log_dir = self._setup(tmp_path)
+        initial_results = {lbl: _proposal_result(lbl) for lbl in labels}
+
+        with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=initial_results) as mock:
+            run_propose(
+                frame,
+                identity_texts,
+                'codex',
+                'frame text',
+                None,
+                round_dir,
+                log_dir,
+            )
+
+        call_kwargs = mock.call_args_list[0].kwargs
+        assert 'output_schema' in call_kwargs
+        os = call_kwargs['output_schema']
+        assert os.disable_tools is False  # propose needs tools!
+        assert 'summary' in os.json_schema.get('properties', {})
+        assert 'code_sketch' in os.json_schema.get('properties', {})
+
+    def test_run_propose_reads_structured_output(self, tmp_path: Path) -> None:
+        """Structured output → to_markdown() → proposals dict has formatted markdown."""
+        labels, identity_texts, frame, round_dir, log_dir = self._setup(tmp_path)
+
+        structured = {
+            'summary': 'Build a cache',
+            'code_sketch': '```python\ncache = {}\n```',
+            'files_changed': 'src/cache.py',
+            'migration_plan': 'Add redis',
+            'what_id_argue': 'Speed boost',
+            'what_worries_me': 'Invalidation',
+        }
+
+        initial_results = {}
+        for lbl in labels:
+            r = _make_result('garbage that would not parse')
+            r.structured_output = structured
+            initial_results[lbl] = r
+
+        with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=initial_results):
+            proposals = run_propose(
+                frame,
+                identity_texts,
+                'codex',
+                'frame text',
+                None,
+                round_dir,
+                log_dir,
+            )
+
+        assert len(proposals) == 5
+        # Proposals should contain beautifully formatted markdown from to_markdown()
+        for text in proposals.values():
+            assert '## Summary' in text
+            assert 'Build a cache' in text
+            assert '## Code sketch' in text
+
+    def test_run_propose_fallback_to_raw_text(self, tmp_path: Path) -> None:
+        """No structured_output → raw text used (backward compat)."""
+        labels, identity_texts, frame, round_dir, log_dir = self._setup(tmp_path)
+        initial_results = {lbl: _proposal_result(lbl) for lbl in labels}
+
+        with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=initial_results):
+            proposals = run_propose(
+                frame,
+                identity_texts,
+                'codex',
+                'frame text',
+                None,
+                round_dir,
+                log_dir,
+            )
+
+        assert len(proposals) == 5
+        # Raw text still works
+        for text in proposals.values():
+            assert '## Summary' in text
+
+
+# ---------------------------------------------------------------------------
+# TestRunDebateStructuredOutput
+# ---------------------------------------------------------------------------
+
+
+class TestRunDebateStructuredOutput:
+    """Verify run_debate() integrates with structured output."""
+
+    def _setup(self, tmp_path):
+        labels = ['A', 'B', 'C', 'D', 'E']
+        proposals = {lbl: f'Proposal {lbl} text' for lbl in labels}
+        identity_texts = {f'i_{lbl.lower()}.md': f'You are agent {lbl}.' for lbl in labels}
+        frame = _make_frame(identities=list(identity_texts.keys()))
+        round_dir = tmp_path / 'round-1'
+        round_dir.mkdir(parents=True)
+        log_dir = tmp_path / 'logs'
+        log_dir.mkdir(parents=True)
+        return labels, proposals, identity_texts, frame, round_dir, log_dir
+
+    def test_run_debate_passes_output_schema(self, tmp_path: Path) -> None:
+        """run_debate passes DebateOutput JSON schema to launch_parallel_agents."""
+        labels, proposals, identity_texts, frame, round_dir, log_dir = self._setup(tmp_path)
+        initial_results = {lbl: _debate_result(lbl) for lbl in labels}
+
+        with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=initial_results) as mock:
+            run_debate(
+                frame,
+                proposals,
+                identity_texts,
+                'codex',
+                'frame text',
+                None,
+                round_dir,
+                log_dir,
+            )
+
+        call_kwargs = mock.call_args_list[0].kwargs
+        assert 'output_schema' in call_kwargs
+        os = call_kwargs['output_schema']
+        assert os.disable_tools is False  # debate needs tools!
+        assert 'my_case' in os.json_schema.get('properties', {})
+        assert 'challenges_to_other_proposals' in os.json_schema.get('properties', {})
+
+    def test_run_debate_reads_structured_output(self, tmp_path: Path) -> None:
+        """Structured output → to_markdown() → debate_entries has formatted markdown."""
+        labels, proposals, identity_texts, frame, round_dir, log_dir = self._setup(tmp_path)
+
+        structured = {
+            'my_case': 'Proposal A is strongest',
+            'challenges_to_other_proposals': 'B has scaling issues',
+            'what_id_adopt_from_others': 'Error handling from C',
+            'my_biggest_doubt': 'Scale concerns',
+        }
+
+        initial_results = {}
+        for lbl in labels:
+            r = _make_result('garbage')
+            r.structured_output = structured
+            initial_results[lbl] = r
+
+        with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=initial_results):
+            debate_entries = run_debate(
+                frame,
+                proposals,
+                identity_texts,
+                'codex',
+                'frame text',
+                None,
+                round_dir,
+                log_dir,
+            )
+
+        assert len(debate_entries) == 5
+        for text in debate_entries.values():
+            assert '## My case' in text
+            assert 'Proposal A is strongest' in text
+            assert '## Challenges to other proposals' in text
+
+    def test_run_debate_fallback_to_raw_text(self, tmp_path: Path) -> None:
+        """No structured_output → raw text used."""
+        labels, proposals, identity_texts, frame, round_dir, log_dir = self._setup(tmp_path)
+        initial_results = {lbl: _debate_result(lbl) for lbl in labels}
+
+        with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=initial_results):
+            debate_entries = run_debate(
+                frame,
+                proposals,
+                identity_texts,
+                'codex',
+                'frame text',
+                None,
+                round_dir,
+                log_dir,
+            )
+
+        assert len(debate_entries) == 5
+        for text in debate_entries.values():
+            assert '## My case' in text
 
 
 # ---------------------------------------------------------------------------
