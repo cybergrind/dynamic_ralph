@@ -413,10 +413,12 @@ class TestTracerIntegration:
         ends = [r for r in records if r['event'] == 'end']
         assert len(begins) >= 2
         assert len(ends) >= 2
-        # All agent spans reference the parent
+        # All agent spans reference the parent and include log_path
         for b in begins:
             assert b['parent_id'] == 'test-phase'
             assert b['kind'] == 'agent'
+            assert 'log_path' in b['details']
+            assert b['details']['log_path'].endswith('.jsonl')
 
     def test_no_tracer_no_trace_file(self, tmp_path: Path):
         """When tracer is None, no trace file is created."""

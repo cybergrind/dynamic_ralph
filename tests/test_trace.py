@@ -6,7 +6,7 @@ import json
 import threading
 from pathlib import Path
 
-from multi_agent.trace import TraceSpan, TraceWriter, format_trace_report
+from multi_agent.trace import TraceSpan, TraceWriter, format_agent_log, format_trace_report
 
 
 # ===========================================================================
@@ -314,3 +314,55 @@ class TestFormatTraceReport:
         report = format_trace_report(trace_path)
         assert '$0.15' in report or '0.15' in report
         assert 'TIMEOUT' in report or 'timed_out' in report.lower() or 'timeout' in report.lower()
+
+
+# ===========================================================================
+# format_agent_log
+# ===========================================================================
+
+
+class TestFormatAgentLog:
+    def _write_log(self, path: Path, events: list[dict]):
+        with open(path, 'w') as f:
+            for ev in events:
+                f.write(json.dumps(ev) + '\n')
+
+    def test_shows_all_event_types(self, tmp_path):
+        log_path = tmp_path / 'agent-A.jsonl'
+        self._write_log(
+            log_path,
+            [
+                {'type': 'system', 'model': 'claude-opus-4-6'},
+                {
+                    'type': 'assistant',
+                    'message': {'content': [{'type': 'text', 'text': 'I will fix the bug.'}]},
+                },
+                {
+                    'type': 'assistant',
+                    'message': {
+                        'content': [{'type': 'tool_use', 'name': 'Read', 'input': {'file_path': '/src/main.py'}}]
+                    },
+                },
+                {
+                    'type': 'user',
+                    'tool_use_result': {'stdout': 'def main():\n    pass', 'stderr': ''},
+                },
+                {'type': 'result', 'subtype': 'end_turn', 'num_turns': 3, 'total_cost_usd': 0.05},
+            ],
+        )
+        output = format_agent_log(log_path)
+        assert 'system' in output.lower() or 'claude-opus' in output
+        assert 'I will fix the bug' in output
+        assert 'Read' in output
+        assert 'main()' in output
+        assert 'end_turn' in output or 'result' in output.lower()
+
+    def test_nonexistent_file(self, tmp_path):
+        output = format_agent_log(tmp_path / 'missing.jsonl')
+        assert 'not found' in output.lower() or output.strip() == ''
+
+    def test_empty_file(self, tmp_path):
+        log_path = tmp_path / 'empty.jsonl'
+        log_path.write_text('')
+        output = format_agent_log(log_path)
+        assert 'no events' in output.lower() or 'empty' in output.lower() or output.strip() == ''

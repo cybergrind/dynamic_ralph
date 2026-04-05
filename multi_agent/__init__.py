@@ -55,7 +55,14 @@ from multi_agent.tally import (
     compute_tally,
     detect_veto,
 )
-from multi_agent.trace import TraceSpan, TraceWriter, format_trace_report
+from multi_agent.trace import (
+    AgentSpanInfo,
+    TraceSpan,
+    TraceWriter,
+    format_agent_log,
+    format_trace_report,
+    load_agent_spans,
+)
 
 
 __all__ = [
@@ -75,6 +82,7 @@ __all__ = [
     'AgentBackend',
     'AgentEvent',
     'AgentResult',
+    'AgentSpanInfo',
     'Attempt',
     'DecisionRecord',
     'ExtractionResult',
@@ -110,11 +118,13 @@ __all__ = [
     'docker_sock_gid',
     'extract',
     'find_next_story',
+    'format_agent_log',
     'format_trace_report',
     'get_backend',
     'get_git_author_identity',
     'image_exists',
     'launch_parallel_agents',
+    'load_agent_spans',
     'load_codex',
     'load_identity',
     'load_prd',

@@ -125,11 +125,15 @@ def launch_parallel_agents(
     agent_env = {k: v for k, v in os.environ.items() if k != 'CLAUDECODE'}
 
     def _run_one(label: str, prompt: str) -> tuple[str, AgentResult]:
-        span_id = f'{trace_parent_id}-{label}' if trace_parent_id else f'agent-{label}'
-        trace_span = tracer.begin(span_id, 'agent', f'agent-{label}', parent_id=trace_parent_id) if tracer else None
-
         cmd = backend.build_command(prompt, max_turns=max_turns)
         log_path = log_dir / f'{log_prefix}{label}.jsonl'
+
+        span_id = f'{trace_parent_id}-{label}' if trace_parent_id else f'agent-{label}'
+        trace_span = (
+            tracer.begin(span_id, 'agent', f'agent-{label}', parent_id=trace_parent_id, log_path=str(log_path))
+            if tracer
+            else None
+        )
         stderr_log_path = log_dir / f'{log_prefix}{label}.stderr.log'
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
