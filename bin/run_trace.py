@@ -10,11 +10,40 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
 from multi_agent.trace import AgentSpanInfo, format_agent_log, format_trace_report, load_agent_spans
+
+
+# ---------------------------------------------------------------------------
+# Line-to-agent mapping (extracted for testability)
+# ---------------------------------------------------------------------------
+
+_AGENT_PATTERN_RE = r'^\s+(agent-\S+)'
+
+
+def build_line_agent_map(report: str, agent_spans: list[AgentSpanInfo]) -> dict[str, AgentSpanInfo]:
+    """Map ``line-<N>`` option IDs to the correct :class:`AgentSpanInfo`.
+
+    Handles duplicate labels across rounds by consuming spans in order.
+    """
+    agent_by_label: dict[str, list[AgentSpanInfo]] = defaultdict(list)
+    for span in agent_spans:
+        agent_by_label[span.label].append(span)
+
+    pattern = re.compile(_AGENT_PATTERN_RE)
+    result: dict[str, AgentSpanInfo] = {}
+    for i, line in enumerate(report.splitlines()):
+        m = pattern.match(line)
+        if m:
+            agent_label = m.group(1)
+            if agent_by_label.get(agent_label):
+                result[f'line-{i}'] = agent_by_label[agent_label].pop(0)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +102,6 @@ def _discover_runs(base_dir: Path) -> list[RunEntry]:
 
 def _build_app():
     """Build and return the Textual App class (import deferred for testability)."""
-    import re
     from typing import ClassVar
 
     from textual.app import App, ComposeResult
@@ -128,6 +156,7 @@ def _build_app():
             # Maps right-pane OptionList option IDs to AgentSpanInfo
             self._line_agent_map: dict[str, AgentSpanInfo] = {}
             self._introspecting: bool = False
+            self._introspect_idx: int = 0  # index into _agent_spans
 
         def compose(self) -> ComposeResult:
             yield Header()
@@ -175,6 +204,30 @@ def _build_app():
                 elif self._introspecting:
                     self.query_one('#introspect-pane', VerticalScroll).scroll_up(animate=False)
                 event.prevent_default()
+            elif event.key == 'ctrl+f':
+                if isinstance(focused, OptionList):
+                    hl = focused.highlighted
+                    if hl is not None:
+                        focused.highlighted = min(hl + 20, focused.option_count - 1)
+                elif self._introspecting:
+                    self.query_one('#introspect-pane', VerticalScroll).scroll_page_down(animate=False)
+                event.prevent_default()
+            elif event.key == 'ctrl+u':
+                if isinstance(focused, OptionList):
+                    hl = focused.highlighted
+                    if hl is not None:
+                        focused.highlighted = max(hl - 20, 0)
+                elif self._introspecting:
+                    self.query_one('#introspect-pane', VerticalScroll).scroll_page_up(animate=False)
+                event.prevent_default()
+            elif event.key == 'ctrl+j' and self._introspecting:
+                if self._introspect_idx < len(self._agent_spans) - 1:
+                    self._enter_introspection(self._agent_spans[self._introspect_idx + 1])
+                event.prevent_default()
+            elif event.key == 'ctrl+k' and self._introspecting:
+                if self._introspect_idx > 0:
+                    self._enter_introspection(self._agent_spans[self._introspect_idx - 1])
+                event.prevent_default()
             elif event.key == 'enter' and isinstance(focused, OptionList) and focused.id == 'right-pane':
                 self._try_introspect()
                 event.prevent_default()
@@ -202,26 +255,20 @@ def _build_app():
             else:
                 report = '(no trace data)'
 
-            # Build a lookup from agent label to span info
-            agent_by_label: dict[str, AgentSpanInfo] = {}
-            for span in self._agent_spans:
-                agent_by_label[span.label] = span
+            self._line_agent_map = build_line_agent_map(report, self._agent_spans)
 
             header = f'Run: {run.run_id}\nStatus: {run.status}\nQuestion: {run.question}'
             for hl in header.splitlines():
                 right.add_option(Option(hl, disabled=True))
             right.add_option(Option('─' * 40, disabled=True))
 
-            agent_pattern = re.compile(r'^\s+(agent-\S+)')
+            agent_pattern = re.compile(_AGENT_PATTERN_RE)
             for i, line in enumerate(report.splitlines()):
                 opt_id = f'line-{i}'
                 m = agent_pattern.match(line)
-                if m:
-                    agent_label = m.group(1)
-                    if agent_label in agent_by_label:
-                        self._line_agent_map[opt_id] = agent_by_label[agent_label]
-                        right.add_option(Option(f'▸ {line.strip()}', id=opt_id))
-                        continue
+                if m and opt_id in self._line_agent_map:
+                    right.add_option(Option(f'▸ {line.strip()}', id=opt_id))
+                    continue
                 # Non-agent lines: add as disabled (not selectable, just display)
                 right.add_option(Option(line or ' ', disabled=True))
 
@@ -241,6 +288,7 @@ def _build_app():
 
         def _enter_introspection(self, span: AgentSpanInfo) -> None:
             self._introspecting = True
+            self._introspect_idx = self._agent_spans.index(span) if span in self._agent_spans else 0
             # Hide left pane + right pane, show introspection
             self.query_one('#main-layout').add_class('hidden')
             introspect = self.query_one('#introspect-pane', VerticalScroll)
@@ -270,6 +318,12 @@ def _build_app():
             self.query_one('#introspect-pane', VerticalScroll).add_class('hidden')
             self.query_one('#main-layout').remove_class('hidden')
             self.query_one('#right-pane', OptionList).focus()
+
+        def action_quit(self) -> None:
+            if self._introspecting:
+                self._exit_introspection()
+            else:
+                self.exit()
 
         def action_back(self) -> None:
             if self._introspecting:

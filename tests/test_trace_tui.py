@@ -86,3 +86,141 @@ class TestDiscoverRuns:
         assert len(runs) == 1
         assert runs[0].status == 'failed'
         assert runs[0].question == 'Test question'
+
+
+# ===========================================================================
+# build_line_agent_map
+# ===========================================================================
+
+
+def _make_two_round_trace(trace_path: Path) -> None:
+    """Write a trace with 2 rounds, each containing agent-A with different log paths."""
+    events = []
+    # Run begin
+    events.append(
+        {
+            'event': 'begin',
+            'span_id': 'run',
+            'kind': 'run',
+            'label': 'run',
+            'started_at': '2026-01-01T00:00:00Z',
+            't_offset_secs': 0.0,
+            'parent_id': None,
+            'details': {},
+        }
+    )
+    for rnd in (1, 2):
+        r_id = f'round-{rnd}'
+        events.append(
+            {
+                'event': 'begin',
+                'span_id': r_id,
+                'kind': 'round',
+                'label': r_id,
+                'started_at': '2026-01-01T00:00:00Z',
+                't_offset_secs': 0.0,
+                'parent_id': 'run',
+                'details': {},
+            }
+        )
+        p_id = f'{r_id}-propose'
+        events.append(
+            {
+                'event': 'begin',
+                'span_id': p_id,
+                'kind': 'phase',
+                'label': 'propose',
+                'started_at': '2026-01-01T00:00:00Z',
+                't_offset_secs': 0.0,
+                'parent_id': r_id,
+                'details': {},
+            }
+        )
+        a_id = f'{r_id}-agent-A'
+        events.append(
+            {
+                'event': 'begin',
+                'span_id': a_id,
+                'kind': 'agent',
+                'label': 'agent-A',
+                'started_at': '2026-01-01T00:00:00Z',
+                't_offset_secs': 0.0,
+                'parent_id': p_id,
+                'details': {'log_path': f'/logs/round{rnd}_agent-A.jsonl'},
+            }
+        )
+        events.append(
+            {
+                'event': 'end',
+                'span_id': a_id,
+                'kind': 'agent',
+                'label': 'agent-A',
+                'ended_at': '2026-01-01T00:00:10Z',
+                't_offset_secs': 10.0,
+                'elapsed_secs': 10.0,
+                'details': {'cost_usd': 0.05, 'timed_out': False},
+            }
+        )
+        events.append(
+            {
+                'event': 'end',
+                'span_id': p_id,
+                'kind': 'phase',
+                'label': 'propose',
+                'ended_at': '2026-01-01T00:00:10Z',
+                't_offset_secs': 10.0,
+                'elapsed_secs': 10.0,
+                'details': {},
+            }
+        )
+        events.append(
+            {
+                'event': 'end',
+                'span_id': r_id,
+                'kind': 'round',
+                'label': r_id,
+                'ended_at': '2026-01-01T00:00:10Z',
+                't_offset_secs': 10.0,
+                'elapsed_secs': 10.0,
+                'details': {},
+            }
+        )
+    # Run end
+    events.append(
+        {
+            'event': 'end',
+            'span_id': 'run',
+            'kind': 'run',
+            'label': 'run',
+            'ended_at': '2026-01-01T00:00:20Z',
+            't_offset_secs': 20.0,
+            'elapsed_secs': 20.0,
+            'details': {},
+        }
+    )
+    with open(trace_path, 'w') as f:
+        for ev in events:
+            f.write(json.dumps(ev) + '\n')
+
+
+class TestBuildLineAgentMap:
+    def test_duplicate_labels_map_to_distinct_spans(self, tmp_path: Path):
+        """agent-A in round-1 and round-2 must map to different spans."""
+        from bin.run_trace import build_line_agent_map
+        from multi_agent.trace import format_trace_report, load_agent_spans
+
+        trace_path = tmp_path / 'trace.jsonl'
+        _make_two_round_trace(trace_path)
+
+        report = format_trace_report(trace_path)
+        spans = load_agent_spans(trace_path)
+
+        line_map = build_line_agent_map(report, spans)
+
+        # Should have 2 mapped lines (one per round)
+        mapped_spans = list(line_map.values())
+        assert len(mapped_spans) == 2
+        # They must be distinct span objects with different log paths
+        assert mapped_spans[0].log_path != mapped_spans[1].log_path
+        assert mapped_spans[0].log_path == '/logs/round1_agent-A.jsonl'
+        assert mapped_spans[1].log_path == '/logs/round2_agent-A.jsonl'
