@@ -217,14 +217,6 @@ def format_trace_report(trace_path: Path) -> str:
         lines.append(f'Total: {elapsed}s')
         lines.append('')
 
-    run_begin = begin_events.get('run')
-    if run_begin:
-        question = run_begin.get('details', {}).get('question')
-        if question:
-            display_q = question if len(question) <= 120 else question[:117] + '...'
-            lines.append(f'Question: {display_q}')
-            lines.append('')
-
     # Group spans by parent
     children: dict[str | None, list[str]] = {}
     for span_id, ev in begin_events.items():

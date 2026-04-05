@@ -474,8 +474,8 @@ class TestFormatTraceReport:
         report = format_trace_report(trace_path)
         assert 'no trace data' in report.lower() or report.strip() == ''
 
-    def test_question_shown_in_report(self, tmp_path):
-        """Question from run begin details appears in formatted report."""
+    def test_question_not_in_report(self, tmp_path):
+        """Question is shown in TUI header, not duplicated in the report body."""
         trace_path = tmp_path / 'trace.jsonl'
         events = [
             {
@@ -501,7 +501,7 @@ class TestFormatTraceReport:
         ]
         self._write_trace(trace_path, events)
         report = format_trace_report(trace_path)
-        assert 'Question: How should we refactor the auth module?' in report
+        assert 'Question:' not in report
 
     def test_identity_shown_in_agent_line(self, tmp_path):
         """Identity name appears in agent line of formatted report."""

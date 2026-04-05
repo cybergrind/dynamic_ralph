@@ -12,6 +12,7 @@ import argparse
 import json
 import re
 import sys
+import textwrap
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -186,21 +187,29 @@ def _build_app():
 
             option_list.focus()
 
+        def _step_highlight(self, option_list: OptionList, direction: int) -> None:
+            """Move highlight by *direction* (+1/-1), skipping disabled options."""
+            hl = option_list.highlighted
+            if hl is None:
+                return
+            target = hl + direction
+            while 0 <= target < option_list.option_count:
+                option_list.highlighted = target
+                if option_list.highlighted != hl:
+                    return
+                target += direction
+
         def on_key(self, event: Key) -> None:
             focused = self.focused
             if event.key == 'j':
                 if isinstance(focused, OptionList):
-                    hl = focused.highlighted
-                    if hl is not None and hl < focused.option_count - 1:
-                        focused.highlighted = hl + 1
+                    self._step_highlight(focused, 1)
                 elif self._introspecting:
                     self.query_one('#introspect-pane', VerticalScroll).scroll_down(animate=False)
                 event.prevent_default()
             elif event.key == 'k':
                 if isinstance(focused, OptionList):
-                    hl = focused.highlighted
-                    if hl is not None and hl > 0:
-                        focused.highlighted = hl - 1
+                    self._step_highlight(focused, -1)
                 elif self._introspecting:
                     self.query_one('#introspect-pane', VerticalScroll).scroll_up(animate=False)
                 event.prevent_default()
@@ -257,9 +266,12 @@ def _build_app():
 
             self._line_agent_map = build_line_agent_map(report, self._agent_spans)
 
-            header = f'Run: {run.run_id}\nStatus: {run.status}\nQuestion: {run.question}'
-            for hl in header.splitlines():
-                right.add_option(Option(hl, disabled=True))
+            right.add_option(Option(f'Run: {run.run_id}', disabled=True))
+            right.add_option(Option(f'Status: {run.status}', disabled=True))
+            if run.question:
+                right.add_option(Option('Question:', disabled=True))
+                for wl in textwrap.wrap(run.question, width=70):
+                    right.add_option(Option(f'  {wl}', disabled=True))
             right.add_option(Option('─' * 40, disabled=True))
 
             agent_pattern = re.compile(_AGENT_PATTERN_RE)
