@@ -31,7 +31,7 @@ from multi_agent.docker import build_image, docker_sock_gid, image_exists
 from multi_agent.extract import Attempt, ExtractionResult, extract
 from multi_agent.filelock import FileLock, FileLockTimeout
 from multi_agent.models import FlatStory, Prd, UserStory, parse_prd
-from multi_agent.orchestrate import run_multi_agent, validate_frame
+from multi_agent.orchestrate import PhaseConfig, run_multi_agent, validate_frame
 from multi_agent.parallel import launch_parallel_agents
 from multi_agent.parsing import (
     ParseDiagnostic,
@@ -82,6 +82,7 @@ __all__ = [
     'FlatStory',
     'Frame',
     'ParseDiagnostic',
+    'PhaseConfig',
     'Prd',
     'Tally',
     'UserStory',

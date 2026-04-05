@@ -151,16 +151,18 @@ def build_propose_prompt(
     codex_text: str,
     frame_text: str,
     prior_context: str | None = None,
+    task_instructions: str | None = None,
 ) -> str:
     """Compose the PROPOSE phase prompt.
 
     Order: IDENTITY → CODEX → TASK FRAMING → [PRIOR CONTEXT] → task instructions.
     *prior_context* is included only when provided (rounds 2+).
+    *task_instructions* overrides the default ``_PROPOSE_TASK`` when provided.
     """
     parts = [identity_text, codex_text, frame_text]
     if prior_context:
         parts.append(f'## Prior Round Context\n\n{prior_context}')
-    parts.append(_PROPOSE_TASK)
+    parts.append(task_instructions or _PROPOSE_TASK)
     return _SEPARATOR.join(parts)
 
 
@@ -170,15 +172,17 @@ def build_debate_prompt(
     frame_text: str,
     all_proposals_text: str,
     prior_context: str | None = None,
+    task_instructions: str | None = None,
 ) -> str:
     """Compose the DEBATE phase prompt.
 
     Order: IDENTITY → CODEX → TASK FRAMING → ALL PROPOSALS → [PRIOR CONTEXT] → task instructions.
+    *task_instructions* overrides the default ``_DEBATE_TASK`` when provided.
     """
     parts = [identity_text, codex_text, frame_text, all_proposals_text]
     if prior_context:
         parts.append(f'## Prior Round Context\n\n{prior_context}')
-    parts.append(_DEBATE_TASK)
+    parts.append(task_instructions or _DEBATE_TASK)
     return _SEPARATOR.join(parts)
 
 
@@ -187,12 +191,14 @@ def build_vote_prompt(
     codex_text: str,
     all_proposals_text: str,
     all_debate_text: str,
+    task_instructions: str | None = None,
 ) -> str:
     """Compose the VOTE phase prompt.
 
     Order: IDENTITY → CODEX → ALL PROPOSALS → ALL DEBATE → task instructions.
     Vote prompt omits task framing per codex spec.
+    *task_instructions* overrides the default ``_VOTE_TASK`` when provided.
     """
     parts = [identity_text, codex_text, all_proposals_text, all_debate_text]
-    parts.append(_VOTE_TASK)
+    parts.append(task_instructions or _VOTE_TASK)
     return _SEPARATOR.join(parts)

@@ -91,8 +91,9 @@ class TestGitResetHard:
         _git_reset_hard('')
         mock_run.assert_not_called()
 
+    @patch('multi_agent.workflow.executor._is_git_worktree', return_value=True)
     @patch('multi_agent.workflow.executor.subprocess.run')
-    def test_calls_reset_and_clean_on_valid_sha(self, mock_run):
+    def test_calls_reset_and_clean_on_valid_sha(self, mock_run, _mock_wt):
         from multi_agent.workflow.executor import _git_reset_hard
 
         _git_reset_hard('abc123')
@@ -100,8 +101,9 @@ class TestGitResetHard:
         assert mock_run.call_args_list[0][0][0] == ['git', 'reset', '--hard', 'abc123']
         assert mock_run.call_args_list[1][0][0] == ['git', 'clean', '-fd']
 
+    @patch('multi_agent.workflow.executor._is_git_worktree', return_value=True)
     @patch('multi_agent.workflow.executor.subprocess.run')
-    def test_does_not_raise_on_subprocess_failure(self, mock_run):
+    def test_does_not_raise_on_subprocess_failure(self, mock_run, _mock_wt):
         mock_run.side_effect = subprocess.CalledProcessError(1, 'git')
         from multi_agent.workflow.executor import _git_reset_hard
 

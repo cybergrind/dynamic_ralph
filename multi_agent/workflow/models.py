@@ -110,11 +110,11 @@ class StoryWorkflow(BaseModel):
     history: list[HistoryEntry] = Field(default_factory=list)
 
     # Internal counter for generating new step IDs
-    _next_step_counter: int = 11
+    _next_step_counter: int = 10
 
     def model_post_init(self, __context: object) -> None:
         """Set _next_step_counter based on the highest existing step ID."""
-        max_num = 10  # default workflow ends at step-010
+        max_num = 0
         for step in self.steps:
             try:
                 num = int(step.id.split('-')[1])

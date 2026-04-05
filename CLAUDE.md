@@ -69,6 +69,8 @@ uv run pytest tests/test_workflow.py::TestSteps
 
 ## Code Quality
 
+Use red/green TDD when it does make sense
+
 ```bash
 # Format and lint
 uv run pre-commit run -a

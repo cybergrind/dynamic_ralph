@@ -104,10 +104,10 @@ def _make_state(*stories: StoryWorkflow) -> WorkflowState:
 
 
 class TestStoryWorkflow:
-    def test_next_step_id_starts_at_011(self):
+    def test_next_step_id_starts_at_010(self):
         story = _make_story()
+        assert story.next_step_id() == 'step-010'
         assert story.next_step_id() == 'step-011'
-        assert story.next_step_id() == 'step-012'
 
     def test_next_step_id_accounts_for_existing(self):
         steps = create_default_workflow()
@@ -151,7 +151,6 @@ class TestSteps:
         steps = create_default_workflow()
         types = [s.type for s in steps]
         assert types == [
-            StepType.context_gathering,
             StepType.planning,
             StepType.architecture,
             StepType.test_architecture,
@@ -164,7 +163,7 @@ class TestSteps:
         ]
 
     def test_mandatory_steps(self):
-        assert MANDATORY_STEPS == {StepType.linting, StepType.final_review}
+        assert len(MANDATORY_STEPS) == 0
 
     def test_step_timeouts_cover_all_types(self):
         for st in StepType:
@@ -234,9 +233,9 @@ class TestState:
 class TestResetInProgress:
     def test_resets_in_progress_steps_to_pending(self, tmp_path):
         steps = [
-            Step(id='step-001', type=StepType.context_gathering, status=StepStatus.completed),
+            Step(id='step-001', type=StepType.planning, status=StepStatus.completed),
             Step(
-                id='step-002', type=StepType.planning, status=StepStatus.in_progress, started_at='2025-01-01T00:00:00Z'
+                id='step-002', type=StepType.architecture, status=StepStatus.in_progress, started_at='2025-01-01T00:00:00Z'
             ),
             Step(id='step-003', type=StepType.coding, status=StepStatus.pending),
         ]
@@ -256,9 +255,9 @@ class TestResetInProgress:
 
     def test_resets_in_progress_story_to_unclaimed(self, tmp_path):
         steps = [
-            Step(id='step-001', type=StepType.context_gathering, status=StepStatus.completed),
+            Step(id='step-001', type=StepType.planning, status=StepStatus.completed),
             Step(
-                id='step-002', type=StepType.planning, status=StepStatus.in_progress, started_at='2025-01-01T00:00:00Z'
+                id='step-002', type=StepType.architecture, status=StepStatus.in_progress, started_at='2025-01-01T00:00:00Z'
             ),
         ]
         story = _make_story(steps=steps, status=StoryStatus.in_progress)
@@ -415,7 +414,7 @@ class TestEditValidation:
         story = _make_story()
         ops = [
             AddAfterEdit(
-                target_step_id='step-010',
+                target_step_id='step-009',
                 reason='test',
                 new_steps=[NewStepSpec(type=StepType.coding, description='After final')],
             )
@@ -423,17 +422,10 @@ class TestEditValidation:
         with pytest.raises(EditValidationError, match='cannot add steps after final_review'):
             validate_edits(story, ops)
 
-    def test_skip_mandatory_step_rejected(self):
-        story = _make_story()
-        # step-006 is linting (mandatory)
-        ops = [SkipEdit(target_step_id='step-006', reason='skip lint')]
-        with pytest.raises(EditValidationError, match='cannot skip mandatory'):
-            validate_edits(story, ops)
-
     def test_skip_non_mandatory_valid(self):
         story = _make_story()
-        # step-009 is prune_tests (not mandatory)
-        ops = [SkipEdit(target_step_id='step-009', reason='no redundant tests')]
+        # step-008 is prune_tests (not mandatory)
+        ops = [SkipEdit(target_step_id='step-008', reason='no redundant tests')]
         validate_edits(story, ops)  # should not raise
 
     def test_skip_non_pending_rejected(self):
@@ -447,7 +439,7 @@ class TestEditValidation:
         story = _make_story()
         ops = [
             SplitEdit(
-                target_step_id='step-005',
+                target_step_id='step-004',
                 reason='split coding',
                 replacement_steps=[
                     NewStepSpec(type=StepType.coding, description='Part 1'),
@@ -457,27 +449,12 @@ class TestEditValidation:
         ]
         validate_edits(story, ops)
 
-    def test_split_mandatory_rejected(self):
-        story = _make_story()
-        ops = [
-            SplitEdit(
-                target_step_id='step-006',
-                reason='split linting',
-                replacement_steps=[
-                    NewStepSpec(type=StepType.linting, description='Part 1'),
-                    NewStepSpec(type=StepType.linting, description='Part 2'),
-                ],
-            )
-        ]
-        with pytest.raises(EditValidationError, match='cannot split mandatory'):
-            validate_edits(story, ops)
-
     def test_restart_valid(self):
         story = _make_story()
-        story.steps[4].status = StepStatus.in_progress  # step-005 coding
+        story.steps[3].status = StepStatus.in_progress  # step-004 coding
         ops = [
             RestartEdit(
-                target_step_id='step-005',
+                target_step_id='step-004',
                 reason='wrong approach',
                 new_description='Try different approach',
             )
@@ -488,7 +465,7 @@ class TestEditValidation:
         story = _make_story()
         ops = [
             RestartEdit(
-                target_step_id='step-005',
+                target_step_id='step-004',
                 reason='test',
                 new_description='New desc',
             )
@@ -498,11 +475,11 @@ class TestEditValidation:
 
     def test_restart_max_exceeded(self):
         story = _make_story()
-        story.steps[4].status = StepStatus.in_progress
-        story.steps[4].restart_count = MAX_RESTARTS_PER_STEP
+        story.steps[3].status = StepStatus.in_progress
+        story.steps[3].restart_count = MAX_RESTARTS_PER_STEP
         ops = [
             RestartEdit(
-                target_step_id='step-005',
+                target_step_id='step-004',
                 reason='test',
                 new_description='New desc',
             )
@@ -512,12 +489,12 @@ class TestEditValidation:
 
     def test_max_steps_exceeded(self):
         story = _make_story()
-        # Add 21 new steps (10 existing + 21 = 31 > 30)
+        # Add 22 new steps (9 existing + 22 = 31 > 30)
         ops = [
             AddAfterEdit(
-                target_step_id='step-005',
+                target_step_id='step-004',
                 reason='test',
-                new_steps=[NewStepSpec(type=StepType.coding, description=f'Extra {i}') for i in range(21)],
+                new_steps=[NewStepSpec(type=StepType.coding, description=f'Extra {i}') for i in range(22)],
             )
         ]
         with pytest.raises(EditValidationError, match='exceeding maximum'):
@@ -551,7 +528,7 @@ class TestEditValidation:
         story = _make_story()
         ops = [
             EditDescriptionEdit(
-                target_step_id='step-005',
+                target_step_id='step-004',
                 reason='clarify',
                 new_description='Updated description',
             )
@@ -560,10 +537,10 @@ class TestEditValidation:
 
     def test_edit_description_non_pending_rejected(self):
         story = _make_story()
-        story.steps[4].status = StepStatus.in_progress
+        story.steps[3].status = StepStatus.in_progress
         ops = [
             EditDescriptionEdit(
-                target_step_id='step-005',
+                target_step_id='step-004',
                 reason='clarify',
                 new_description='Updated',
             )
@@ -588,17 +565,17 @@ class TestEditApplication:
         validate_edits(story, ops)
         apply_edits(story, ops)
 
-        assert len(story.steps) == 11
+        assert len(story.steps) == 10
         assert story.steps[1].type == StepType.coding
         assert story.steps[1].description == 'Extra coding'
-        assert story.steps[1].id == 'step-011'
+        assert story.steps[1].id == 'step-010'
 
     def test_apply_split(self):
         story = _make_story()
-        original_step_5_idx = next(i for i, s in enumerate(story.steps) if s.id == 'step-005')
+        original_step_4_idx = next(i for i, s in enumerate(story.steps) if s.id == 'step-004')
         ops = [
             SplitEdit(
-                target_step_id='step-005',
+                target_step_id='step-004',
                 reason='split',
                 replacement_steps=[
                     NewStepSpec(type=StepType.coding, description='Part 1'),
@@ -609,17 +586,17 @@ class TestEditApplication:
         validate_edits(story, ops)
         apply_edits(story, ops)
 
-        assert len(story.steps) == 11  # 10 - 1 + 2
-        assert story.steps[original_step_5_idx].description == 'Part 1'
-        assert story.steps[original_step_5_idx + 1].description == 'Part 2'
+        assert len(story.steps) == 10  # 9 - 1 + 2
+        assert story.steps[original_step_4_idx].description == 'Part 1'
+        assert story.steps[original_step_4_idx + 1].description == 'Part 2'
 
     def test_apply_skip(self):
         story = _make_story()
-        ops = [SkipEdit(target_step_id='step-009', reason='no redundancy')]
+        ops = [SkipEdit(target_step_id='step-008', reason='no redundancy')]
         validate_edits(story, ops)
         apply_edits(story, ops)
 
-        step = story.find_step('step-009')
+        step = story.find_step('step-008')
         assert step.status == StepStatus.skipped
         assert step.skip_reason == 'no redundancy'
 
@@ -638,7 +615,7 @@ class TestEditApplication:
         story = _make_story()
         ops = [
             EditDescriptionEdit(
-                target_step_id='step-005',
+                target_step_id='step-004',
                 reason='clarify',
                 new_description='Updated description',
             )
@@ -646,17 +623,17 @@ class TestEditApplication:
         validate_edits(story, ops)
         apply_edits(story, ops)
 
-        step = story.find_step('step-005')
+        step = story.find_step('step-004')
         assert step.description == 'Updated description'
 
     def test_apply_restart(self):
         story = _make_story()
-        story.steps[4].status = StepStatus.in_progress
-        story.steps[4].started_at = '2025-01-01T00:00:00Z'
-        story.steps[4].log_file = '/tmp/old_log.txt'
+        story.steps[3].status = StepStatus.in_progress
+        story.steps[3].started_at = '2025-01-01T00:00:00Z'
+        story.steps[3].log_file = '/tmp/old_log.txt'
         ops = [
             RestartEdit(
-                target_step_id='step-005',
+                target_step_id='step-004',
                 reason='wrong approach',
                 new_description='Try different approach',
             )
@@ -664,7 +641,7 @@ class TestEditApplication:
         validate_edits(story, ops)
         apply_edits(story, ops)
 
-        step = story.find_step('step-005')
+        step = story.find_step('step-004')
         assert step.status == StepStatus.pending
         assert step.description == 'Try different approach'
         assert step.restart_count == 1
@@ -719,7 +696,7 @@ class TestEditRoundTrip:
         (edits_dir / 'US-001.json').write_text(
             json.dumps(
                 [
-                    {'operation': 'skip', 'target_step_id': 'step-009', 'reason': 'not needed'},
+                    {'operation': 'skip', 'target_step_id': 'step-008', 'reason': 'not needed'},
                 ]
             )
         )
@@ -731,7 +708,7 @@ class TestEditRoundTrip:
         validate_edits(story, ops)
         apply_edits(story, ops)
 
-        step = story.find_step('step-009')
+        step = story.find_step('step-008')
         assert step.status == StepStatus.skipped
         assert step.skip_reason == 'not needed'
         remove_edit_file('US-001', tmp_path)
@@ -744,7 +721,7 @@ class TestEditRoundTrip:
         (edits_dir / 'US-001.json').write_text(
             json.dumps(
                 [
-                    {'operation': 'skip', 'step_id': 'step-009', 'reason': 'test'},
+                    {'operation': 'skip', 'step_id': 'step-008', 'reason': 'test'},
                 ]
             )
         )
@@ -761,7 +738,7 @@ class TestEditRoundTrip:
                 [
                     {
                         'operation': 'add_after',
-                        'target_step_id': 'step-005',
+                        'target_step_id': 'step-004',
                         'reason': 'need extra coding round',
                         'new_steps': [
                             {'type': 'coding', 'description': 'Extra coding pass'},
@@ -777,8 +754,8 @@ class TestEditRoundTrip:
         validate_edits(story, ops)
         apply_edits(story, ops)
 
-        assert len(story.steps) == 11
-        coding_idx = next(i for i, s in enumerate(story.steps) if s.id == 'step-005')
+        assert len(story.steps) == 10
+        coding_idx = next(i for i, s in enumerate(story.steps) if s.id == 'step-004')
         assert story.steps[coding_idx + 1].description == 'Extra coding pass'
 
     def test_discard_on_validation_failure(self, tmp_path):
@@ -788,7 +765,7 @@ class TestEditRoundTrip:
         (edits_dir / 'US-001.json').write_text(
             json.dumps(
                 [
-                    {'operation': 'skip', 'target_step_id': 'step-006', 'reason': 'skip mandatory'},
+                    {'operation': 'skip', 'target_step_id': 'step-999', 'reason': 'nonexistent step'},
                 ]
             )
         )
@@ -907,7 +884,7 @@ class TestPrompts:
         story = _make_story()
         story.steps[0].status = StepStatus.completed
         story.steps[0].notes = 'Found relevant models in profiles/models.py'
-        step = story.steps[1]  # planning
+        step = story.steps[1]  # architecture
         prompt = compose_step_prompt(story, step, '', '', shared_dir=Path('/test/shared'))
         assert 'Found relevant models' in prompt
 
@@ -936,40 +913,40 @@ class TestPrompts:
 
     def test_compose_step_prompt_no_editing_for_non_editable_steps(self):
         story = _make_story()
-        # context_gathering does not allow editing
-        step = story.steps[0]
+        # linting (step-005, index 4) does not allow editing
+        step = story.steps[4]
         prompt = compose_step_prompt(story, step, '', '', shared_dir=Path('/test/shared'))
         assert 'workflow_edits/US-001.json' not in prompt
 
     def test_compose_step_prompt_lists_remaining_step_ids(self):
         story = _make_story()
-        # planning (step-002) allows editing; steps 003-010 are pending after it
+        # architecture (step-002) allows editing; steps 003-009 are pending after it
         step = story.steps[1]
         prompt = compose_step_prompt(story, step, '', '', shared_dir=Path('/test/shared'))
         assert 'Remaining Steps' in prompt
         for s in story.steps[2:]:
             assert s.id in prompt
 
-    def test_format_remaining_steps_shows_mandatory_flag(self):
+    def test_format_remaining_steps_shows_step_ids(self):
         story = _make_story()
-        step = story.steps[1]  # planning
+        step = story.steps[0]  # planning
         remaining = _format_remaining_steps(story, step)
-        # linting (step-006) and final_review (step-010) are mandatory
-        assert 'step-006' in remaining
-        assert '**(mandatory)**' in remaining
-        # coding (step-005) is not mandatory
+        # All subsequent steps should appear
         assert 'step-005' in remaining
+        assert 'step-009' in remaining
+        # No mandatory flags since MANDATORY_STEPS is empty
+        assert '**(mandatory)**' not in remaining
 
     def test_format_remaining_steps_excludes_skipped(self):
         story = _make_story()
-        story.steps[8].status = StepStatus.skipped  # step-009 prune_tests
-        step = story.steps[1]  # planning
+        story.steps[7].status = StepStatus.skipped  # step-008 prune_tests
+        step = story.steps[0]  # planning
         remaining = _format_remaining_steps(story, step)
-        assert 'step-009' not in remaining
+        assert 'step-008' not in remaining
 
     def test_compose_step_prompt_includes_scratch_file_paths(self):
         story = _make_story()
-        step = story.steps[0]  # context_gathering (non-editable step)
+        step = story.steps[0]  # planning
         shared = Path('/run/shared')
         prompt = compose_step_prompt(story, step, '', '', shared_dir=shared)
         assert '## Scratch Files' in prompt
@@ -994,15 +971,12 @@ class TestPrompts:
     def test_compose_step_prompt_includes_full_output_from_planning(self):
         story = _make_story()
         # Mark planning step as completed with both notes and full_output
-        planning_step = story.steps[1]  # step-002 planning
+        planning_step = story.steps[0]  # step-001 planning
         planning_step.status = StepStatus.completed
         planning_step.notes = 'Short summary of the plan'
         planning_step.full_output = 'Full detailed planning output with all reasoning'
-        # Also complete context_gathering so planning is a prior step
-        story.steps[0].status = StepStatus.completed
-        story.steps[0].notes = 'Context notes'
-        # Compose prompt for coding step (step-005, index 4)
-        coding_step = story.steps[4]
+        # Compose prompt for coding step (step-004, index 3)
+        coding_step = story.steps[3]
         prompt = compose_step_prompt(story, coding_step, '', '', shared_dir=Path('/test/shared'))
         assert 'Full detailed planning output with all reasoning' in prompt
         assert 'Short summary of the plan' not in prompt
@@ -1010,15 +984,12 @@ class TestPrompts:
     def test_compose_step_prompt_falls_back_to_notes_when_full_output_none(self):
         story = _make_story()
         # Mark planning step as completed with notes but no full_output
-        planning_step = story.steps[1]  # step-002 planning
+        planning_step = story.steps[0]  # step-001 planning
         planning_step.status = StepStatus.completed
         planning_step.notes = 'Short summary of the plan'
         planning_step.full_output = None
-        # Also complete context_gathering
-        story.steps[0].status = StepStatus.completed
-        story.steps[0].notes = 'Context notes'
-        # Compose prompt for coding step
-        coding_step = story.steps[4]
+        # Compose prompt for coding step (step-004, index 3)
+        coding_step = story.steps[3]
         prompt = compose_step_prompt(story, coding_step, '', '', shared_dir=Path('/test/shared'))
         assert 'Short summary of the plan' in prompt
 

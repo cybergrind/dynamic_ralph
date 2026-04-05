@@ -12,6 +12,7 @@ import logging
 import random
 import string
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -62,6 +63,25 @@ DEBATE_MAX_TURNS = 5
 VOTE_TIMEOUT = 300
 VOTE_MAX_TURNS = 3
 QUORUM_MIN = 3
+
+
+@dataclass
+class PhaseConfig:
+    """Configurable timeouts, turn limits, and prompt overrides per phase."""
+
+    propose_timeout: int = PROPOSE_TIMEOUT
+    propose_max_turns: int = PROPOSE_MAX_TURNS
+    debate_timeout: int = DEBATE_TIMEOUT
+    debate_max_turns: int = DEBATE_MAX_TURNS
+    vote_timeout: int = VOTE_TIMEOUT
+    vote_max_turns: int = VOTE_MAX_TURNS
+    quorum_min: int = QUORUM_MIN
+    # Prompt overrides (None = use default codex-based prompts)
+    propose_task: str | None = None
+    debate_task: str | None = None
+    vote_task: str | None = None
+    # Custom proposal sections for parsing (None = use default)
+    proposal_sections: list[str] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -244,15 +264,16 @@ def _enforce_quorum(
     timeout: int,
     log_dir: Path,
     log_prefix: str = '',
+    quorum_min: int = QUORUM_MIN,
 ) -> dict[str, AgentResult]:
-    """Retry failed agents once. Raise RuntimeError if still below QUORUM_MIN."""
+    """Retry failed agents once. Raise RuntimeError if still below *quorum_min*."""
     failed = {label: prompts[label] for label, r in results.items() if not _agent_succeeded(r)}
 
     if not failed:
         return results
 
     succeeded = sum(1 for r in results.values() if _agent_succeeded(r))
-    if succeeded >= QUORUM_MIN:
+    if succeeded >= quorum_min:
         log.info(
             'Quorum already met (%d/%d succeeded), skipping retry of %d failed agents: %s',
             succeeded,
@@ -278,8 +299,8 @@ def _enforce_quorum(
             merged[label] = result
 
     succeeded = sum(1 for r in merged.values() if _agent_succeeded(r))
-    if succeeded < QUORUM_MIN:
-        msg = f'Quorum not met: {succeeded}/{len(merged)} agents succeeded (need {QUORUM_MIN})'
+    if succeeded < quorum_min:
+        msg = f'Quorum not met: {succeeded}/{len(merged)} agents succeeded (need {quorum_min})'
         raise RuntimeError(msg)
 
     return merged
@@ -301,12 +322,14 @@ def run_propose(
     *,
     backend: AgentBackend | None = None,
     log_prefix: str = '',
+    phase_config: PhaseConfig | None = None,
 ) -> dict[str, str]:
     """Build per-agent PROPOSE prompts, launch in parallel, parse proposals.
 
     Returns proposals dict keyed by uppercase label (A, B, C, ...).
     Writes agent-{label}.md and all-proposals.md to round_dir/proposals/.
     """
+    cfg = phase_config or PhaseConfig()
     label_map = _assign_labels(list(identity_texts.keys()))
     prompts: dict[str, str] = {}
     for identity, label in label_map.items():
@@ -315,14 +338,15 @@ def run_propose(
             codex_text=codex_text,
             frame_text=frame_text,
             prior_context=prior_context,
+            task_instructions=cfg.propose_task,
         )
 
     phase_prefix = f'{log_prefix}propose-'
     results = launch_parallel_agents(
         prompts,
         backend=backend,
-        max_turns=PROPOSE_MAX_TURNS,
-        timeout=PROPOSE_TIMEOUT,
+        max_turns=cfg.propose_max_turns,
+        timeout=cfg.propose_timeout,
         log_dir=log_dir,
         log_prefix=phase_prefix,
     )
@@ -330,10 +354,11 @@ def run_propose(
         results,
         prompts,
         backend=backend,
-        max_turns=PROPOSE_MAX_TURNS,
-        timeout=PROPOSE_TIMEOUT,
+        max_turns=cfg.propose_max_turns,
+        timeout=cfg.propose_timeout,
         log_dir=log_dir,
         log_prefix=phase_prefix,
+        quorum_min=cfg.quorum_min,
     )
 
     proposals_dir = round_dir / 'proposals'
@@ -344,7 +369,7 @@ def run_propose(
     for label in sorted(results.keys()):
         result = results[label]
         text = result.full_response
-        sections, diag = parse_proposal(text, agent_label=label)
+        sections, diag = parse_proposal(text, agent_label=label, required_sections=cfg.proposal_sections)
         diagnostics.append(diag)
 
         if sections is not None:
@@ -376,12 +401,14 @@ def run_debate(
     *,
     backend: AgentBackend | None = None,
     log_prefix: str = '',
+    phase_config: PhaseConfig | None = None,
 ) -> dict[str, str]:
     """Build per-agent DEBATE prompts, launch in parallel, extract debate entries.
 
     Returns debate_entries dict keyed by uppercase label.
     Writes agent-{label}.md and all-debate.md to round_dir/debate/.
     """
+    cfg = phase_config or PhaseConfig()
     label_map = _assign_labels(list(identity_texts.keys()))
     all_proposals_text = concatenate_proposals(proposals)
     prompts: dict[str, str] = {}
@@ -392,14 +419,15 @@ def run_debate(
             frame_text=frame_text,
             all_proposals_text=all_proposals_text,
             prior_context=prior_context,
+            task_instructions=cfg.debate_task,
         )
 
     phase_prefix = f'{log_prefix}debate-'
     results = launch_parallel_agents(
         prompts,
         backend=backend,
-        max_turns=DEBATE_MAX_TURNS,
-        timeout=DEBATE_TIMEOUT,
+        max_turns=cfg.debate_max_turns,
+        timeout=cfg.debate_timeout,
         log_dir=log_dir,
         log_prefix=phase_prefix,
     )
@@ -407,9 +435,10 @@ def run_debate(
         results,
         prompts,
         backend=backend,
-        max_turns=DEBATE_MAX_TURNS,
-        timeout=DEBATE_TIMEOUT,
+        max_turns=cfg.debate_max_turns,
+        timeout=cfg.debate_timeout,
         log_dir=log_dir,
+        quorum_min=cfg.quorum_min,
         log_prefix=phase_prefix,
     )
 
@@ -439,12 +468,14 @@ def run_vote(
     *,
     backend: AgentBackend | None = None,
     log_prefix: str = '',
+    phase_config: PhaseConfig | None = None,
 ) -> dict[str, VoteResult]:
     """Build per-agent VOTE prompts, launch in parallel, parse votes.
 
     Returns votes dict keyed by voter label.
     Writes agent-{label}.md to round_dir/votes/.
     """
+    cfg = phase_config or PhaseConfig()
     label_map = _assign_labels(list(identity_texts.keys()))
     all_proposals_text = concatenate_proposals(proposals)
     all_debate_text = concatenate_debate(debate_entries)
@@ -457,14 +488,15 @@ def run_vote(
             codex_text=codex_text,
             all_proposals_text=all_proposals_text,
             all_debate_text=all_debate_text,
+            task_instructions=cfg.vote_task,
         )
 
     phase_prefix = f'{log_prefix}vote-'
     results = launch_parallel_agents(
         prompts,
         backend=backend,
-        max_turns=VOTE_MAX_TURNS,
-        timeout=VOTE_TIMEOUT,
+        max_turns=cfg.vote_max_turns,
+        timeout=cfg.vote_timeout,
         log_dir=log_dir,
         log_prefix=phase_prefix,
     )
@@ -472,10 +504,11 @@ def run_vote(
         results,
         prompts,
         backend=backend,
-        max_turns=VOTE_MAX_TURNS,
-        timeout=VOTE_TIMEOUT,
+        max_turns=cfg.vote_max_turns,
+        timeout=cfg.vote_timeout,
         log_dir=log_dir,
         log_prefix=phase_prefix,
+        quorum_min=cfg.quorum_min,
     )
 
     votes_dir = round_dir / 'votes'
@@ -488,8 +521,8 @@ def run_vote(
             retry = launch_parallel_agents(
                 {label: correction_prompt},
                 backend=backend,
-                max_turns=VOTE_MAX_TURNS,
-                timeout=VOTE_TIMEOUT,
+                max_turns=cfg.vote_max_turns,
+                timeout=cfg.vote_timeout,
                 log_dir=log_dir,
                 log_prefix=f'{phase_prefix}retry-{label}-',
             )
@@ -560,6 +593,8 @@ def run_multi_agent(
     codex_text: str | None = None,
     identity_texts: dict[str, str] | None = None,
     resume_run_id: str | None = None,
+    phase_config: PhaseConfig | None = None,
+    skip_frame_validation: bool = False,
 ) -> DecisionRecord:
     """Main entrypoint: FRAME -> cyclic PROPOSE/DEBATE/VOTE -> DECIDE.
 
@@ -583,6 +618,10 @@ def run_multi_agent(
         Pre-loaded identity texts keyed by identity name. If None, loaded from disk.
     resume_run_id:
         If set, resume a partial run by its run_id instead of starting fresh.
+    phase_config:
+        Phase timeouts, turn limits, and prompt overrides. Defaults to standard config.
+    skip_frame_validation:
+        If True, skip the ``validate_frame()`` check (useful for fast mode).
     """
     if working_dir is None:
         working_dir = Path('run_ralph') / 'multi-agent'
@@ -622,7 +661,8 @@ def run_multi_agent(
         constraints=[],
         identities=identity_names,
     )
-    validate_frame(frame)
+    if not skip_frame_validation:
+        validate_frame(frame)
 
     # Load texts
     if codex_text is None:
@@ -698,6 +738,7 @@ def run_multi_agent(
                     log_dir,
                     backend=backend,
                     log_prefix=rnd_prefix,
+                    phase_config=phase_config,
                 )
 
             # DEBATE
@@ -716,6 +757,7 @@ def run_multi_agent(
                     log_dir,
                     backend=backend,
                     log_prefix=rnd_prefix,
+                    phase_config=phase_config,
                 )
 
             # VOTE
@@ -733,6 +775,7 @@ def run_multi_agent(
                     log_dir,
                     backend=backend,
                     log_prefix=rnd_prefix,
+                    phase_config=phase_config,
                 )
 
             # TALLY (always recompute)

@@ -292,18 +292,28 @@ def parse_vote(
     ), diag
 
 
-def parse_proposal(text: str, agent_label: str) -> tuple[dict[str, str] | None, ParseDiagnostic]:
-    """Parse a proposal from agent output. Returns (sections_dict, diagnostic)."""
+_DEFAULT_PROPOSAL_SECTIONS = [
+    'Summary',
+    'Code sketch',
+    'Files changed',
+    'Migration plan',
+    "What I'd argue",
+    'What worries me',
+]
+
+
+def parse_proposal(
+    text: str,
+    agent_label: str,
+    required_sections: list[str] | None = None,
+) -> tuple[dict[str, str] | None, ParseDiagnostic]:
+    """Parse a proposal from agent output. Returns (sections_dict, diagnostic).
+
+    *required_sections* overrides the default proposal headings when provided.
+    """
     sections, diag = parse_sections(
         text,
-        required=[
-            'Summary',
-            'Code sketch',
-            'Files changed',
-            'Migration plan',
-            "What I'd argue",
-            'What worries me',
-        ],
+        required=required_sections or _DEFAULT_PROPOSAL_SECTIONS,
     )
     diag.agent_label = agent_label
     diag.phase = 'propose'
