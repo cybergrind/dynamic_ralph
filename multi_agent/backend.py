@@ -12,13 +12,28 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Iterator, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Iterator, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
 
 if TYPE_CHECKING:
     pass
+
+
+# ---------------------------------------------------------------------------
+# EventKind — constrained set of event categories
+# ---------------------------------------------------------------------------
+
+EventKind = Literal[
+    'system',
+    'assistant',
+    'tool_use',
+    'tool_result',
+    'result',
+    'error',
+    'raw',
+]
 
 
 # ---------------------------------------------------------------------------
@@ -50,7 +65,7 @@ class AgentEvent:
               logging and downstream metric extraction.
     """
 
-    kind: str
+    kind: EventKind
     text: str = ''
     raw: dict = field(default_factory=dict)
 
@@ -172,6 +187,14 @@ class AgentBackend(Protocol):
         Called after the agent process has exited.  *events* contains every
         ``AgentEvent`` yielded during the run; *exit_code* is the process
         return code.
+        """
+        ...
+
+    def env_filter(self, env: dict[str, str]) -> dict[str, str]:
+        """Return a copy of *env* with backend-specific variables removed.
+
+        Called before launching agent subprocesses to prevent nested-session
+        detection or other backend-specific conflicts.
         """
         ...
 

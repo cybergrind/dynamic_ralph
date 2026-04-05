@@ -13,6 +13,7 @@ from multi_agent.backend import (
     AgentBackend,
     AgentEvent,
     AgentResult,
+    EventKind,
     get_backend,
     register_backend,
 )
@@ -38,6 +39,24 @@ def _clean_registry():
 # ---------------------------------------------------------------------------
 # AgentEvent tests
 # ---------------------------------------------------------------------------
+
+
+class TestEventKind:
+    def test_event_kind_includes_all_expected_values(self):
+        """EventKind Literal includes all documented event categories."""
+        from typing import get_args
+
+        expected = {'system', 'assistant', 'tool_use', 'tool_result', 'result', 'error', 'raw'}
+        assert set(get_args(EventKind)) == expected
+
+    def test_retained_kinds_subset_of_event_kind(self):
+        """_RETAINED_KINDS in parallel.py must be a subset of EventKind values."""
+        from typing import get_args
+
+        from multi_agent.parallel import _RETAINED_KINDS
+
+        valid_kinds = set(get_args(EventKind))
+        assert _RETAINED_KINDS <= valid_kinds
 
 
 class TestAgentEvent:
@@ -173,12 +192,57 @@ class TestAgentBackendProtocol:
             def extract_result(self, events, exit_code):
                 return AgentResult(exit_code=exit_code)
 
+            def env_filter(self, env):
+                return env
+
         assert isinstance(DummyBackend(), AgentBackend)
+
+    def test_missing_env_filter_fails_protocol(self):
+        """A class missing env_filter does not satisfy AgentBackend."""
+
+        class IncompleteBackend:
+            def build_command(self, prompt, *, system_prompt='', max_turns=None, output_schema=None):
+                return ['echo', prompt]
+
+            def build_docker_command(self, base_cmd, *, agent_id, workspace):
+                return ['docker', 'run', *base_cmd]
+
+            def parse_events(self, lines):
+                yield AgentEvent(kind='raw', text='dummy')
+
+            def extract_result(self, events, exit_code):
+                return AgentResult(exit_code=exit_code)
+
+        assert not isinstance(IncompleteBackend(), AgentBackend)
 
 
 # ---------------------------------------------------------------------------
 # ClaudeCodeBackend tests
 # ---------------------------------------------------------------------------
+
+
+class TestClaudeCodeEnvFilter:
+    def test_strips_claudecode(self):
+        backend = ClaudeCodeBackend()
+        env = {'PATH': '/usr/bin', 'CLAUDECODE': '1', 'HOME': '/home/user'}
+        filtered = backend.env_filter(env)
+        assert 'CLAUDECODE' not in filtered
+        assert filtered['PATH'] == '/usr/bin'
+        assert filtered['HOME'] == '/home/user'
+
+    def test_noop_when_claudecode_absent(self):
+        backend = ClaudeCodeBackend()
+        env = {'PATH': '/usr/bin', 'HOME': '/home/user'}
+        filtered = backend.env_filter(env)
+        assert filtered == env
+
+    def test_returns_new_dict(self):
+        """env_filter must not mutate the input dict."""
+        backend = ClaudeCodeBackend()
+        env = {'CLAUDECODE': '1', 'FOO': 'bar'}
+        filtered = backend.env_filter(env)
+        assert 'CLAUDECODE' in env  # original untouched
+        assert 'CLAUDECODE' not in filtered
 
 
 class TestClaudeCodeBuildCommand:
@@ -579,3 +643,17 @@ class TestDisplayAgentEvent:
         display_agent_event(AgentEvent(kind='raw', text='npm warn'))
         captured = capsys.readouterr()
         assert captured.err == ''
+
+
+class TestLegacyDisplayEventRemoved:
+    def test_display_event_not_in_stream(self):
+        """Legacy display_event() has been removed from stream.py."""
+        import multi_agent.stream as stream_mod
+
+        assert not hasattr(stream_mod, 'display_event')
+
+    def test_display_event_not_in_package(self):
+        """display_event is not re-exported from multi_agent.__init__."""
+        import multi_agent
+
+        assert 'display_event' not in multi_agent.__all__

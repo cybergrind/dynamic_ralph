@@ -30,48 +30,51 @@ RUN install -m 0755 -d /etc/apt/keyrings \
 COPY --from=ghcr.io/astral-sh/uv:0.10.2 /uv /usr/local/bin/uv
 
 # Pre-install project Python deps so `uv run` is instant at runtime
-ENV UV_PROJECT_ENVIRONMENT=/tmp/venv
-WORKDIR /workspace
-COPY pyproject.toml uv.lock .pre-commit-config.yaml ./
-RUN uv sync --frozen --no-install-project
-
-# Claude Code CLI
-RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+ENV UV_CACHE_DIR=/opt/uv-cache
+ENV COLORTERM=truecolor
 
 # Allow --dangerously-skip-permissions in Docker
 ENV IS_SANDBOX=1
 
+# Claude Code CLI
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+
 # Create non-root user (UID=1000 matches typical host user)
 RUN groupadd -g 1000 agent && useradd -u 1000 -g agent -m agent
+RUN mkdir -p /opt/{ralph,venv,uv-cache} && chown -R agent:agent /opt
+COPY pyproject.toml uv.lock /opt/ralph/
+
+RUN chown -R agent:agent /opt/
+
+USER agent
+
+WORKDIR /workspace
+COPY pyproject.toml uv.lock .pre-commit-config.yaml ./
+RUN uv sync --frozen --no-install-project
 
 # Ensure agent user can access pre-built venv and npm globals
-RUN chown -R agent:agent /tmp/venv
 ENV HOME=/home/agent
 
 # Pre-create npm cache dir (npx needs it in interactive mode)
 RUN mkdir -p /home/agent/.npm && chown agent:agent /home/agent/.npm
 
 # Git safe directory for the non-root user
-RUN su - agent -c "git config --global --add safe.directory /workspace"
+RUN git config --global --add safe.directory /workspace
 
 # Ralph's own instructions baked into /opt/ralph (for third-party repo mode)
-COPY pyproject.toml uv.lock /opt/ralph/
 RUN UV_PROJECT_ENVIRONMENT=/opt/ralph/.venv uv sync --frozen --no-install-project --directory /opt/ralph
 
 COPY CLAUDE.md /opt/ralph/CLAUDE.md
 COPY docs/ /opt/ralph/docs/
 COPY multi_agent/ /opt/ralph/multi_agent/
 
-# Ralph's own venv (separate from workspace venv at /tmp/venv)
-
 # Wrapper: ralph-run uses ralph's own venv with correct PYTHONPATH
+USER root
 RUN printf '#!/bin/sh\nPYTHONPATH=/opt/ralph exec /opt/ralph/.venv/bin/python "$@"\n' \
     > /usr/local/bin/ralph-run && chmod +x /usr/local/bin/ralph-run
 
-RUN chown -R agent:agent /opt/ralph
-
+USER agent
 # Personal-scope skill so Claude Code auto-discovers it regardless of CWD
 COPY skills /opt/ralph/.claude/skills
 
-USER agent
-ENV COLORTERM=truecolor

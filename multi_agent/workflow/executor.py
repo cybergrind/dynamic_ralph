@@ -226,9 +226,7 @@ def _launch_agent(
     # Derive stderr log path alongside the .jsonl log
     stderr_log_path = log_path.with_suffix('.stderr.log')
 
-    # Strip CLAUDECODE from env to avoid nested-session detection when the
-    # orchestrator itself runs inside a Claude Code session.
-    agent_env = {k: v for k, v in os.environ.items() if k != 'CLAUDECODE'}
+    agent_env = backend.env_filter(dict(os.environ))
 
     process = subprocess.Popen(
         cmd,

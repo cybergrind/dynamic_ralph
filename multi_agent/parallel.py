@@ -20,7 +20,7 @@ import time as _time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from multi_agent.backend import AgentBackend, AgentEvent, AgentResult, OutputSchema, get_backend
+from multi_agent.backend import AgentBackend, AgentEvent, AgentResult, EventKind, OutputSchema, get_backend
 from multi_agent.constants import MULTI_AGENT_MAX_WORKERS
 
 
@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 # tool_result) contain full file contents and would amplify memory 10x when
 # 5 agents run concurrently. All events are still written to the disk log.
 # CONTRACT: if extract_result() ever needs tool events, update this set.
-_RETAINED_KINDS: frozenset[str] = frozenset({'assistant', 'result', 'system', 'error'})
+_RETAINED_KINDS: frozenset[EventKind] = frozenset({'assistant', 'result', 'system', 'error'})
 
 _TERMINATE_GRACE_SECONDS: float = 5.0
 
@@ -111,7 +111,7 @@ def launch_parallel_agents(
     """Launch multiple agents in parallel, returning results keyed by label.
 
     Mirrors the safety guarantees of executor.py:_launch_agent():
-    - CLAUDECODE env stripping (prevents nested-session detection)
+    - backend.env_filter() (prevents nested-session detection)
     - Preemptive wall-clock timeout via _SubprocessWatchdog
     - _RETAINED_KINDS event filter (bounds memory for concurrent agents)
     - stderr capture to per-agent log files (prevents pipe buffer deadlock)
@@ -122,8 +122,7 @@ def launch_parallel_agents(
     if backend is None:
         backend = get_backend()
 
-    # Strip CLAUDECODE to avoid nested-session detection (executor.py:231)
-    agent_env = {k: v for k, v in os.environ.items() if k != 'CLAUDECODE'}
+    agent_env = backend.env_filter(dict(os.environ))
 
     def _run_one(label: str, prompt: str) -> tuple[str, AgentResult]:
         cmd = backend.build_command(prompt, max_turns=max_turns, output_schema=output_schema)

@@ -1,6 +1,6 @@
 """Shared code for the ralph multi-agent workflow."""
 
-from multi_agent.backend import AgentBackend, AgentEvent, AgentResult, get_backend
+from multi_agent.backend import AgentBackend, AgentEvent, AgentResult, EventKind, get_backend
 from multi_agent.codex_prompts import (
     build_debate_prompt,
     build_propose_prompt,
@@ -45,7 +45,7 @@ from multi_agent.parsing import (
 )
 from multi_agent.prd import find_next_story, load_prd, load_prd_model, save_prd
 from multi_agent.prompts import BASE_AGENT_INSTRUCTIONS, build_system_prompt
-from multi_agent.stream import display_agent_event, display_event
+from multi_agent.stream import display_agent_event
 from multi_agent.tally import (
     DecisionRecord,
     Frame,
@@ -85,6 +85,7 @@ __all__ = [
     'AgentSpanInfo',
     'Attempt',
     'DecisionRecord',
+    'EventKind',
     'ExtractionResult',
     'FileLock',
     'FileLockTimeout',
@@ -114,7 +115,6 @@ __all__ = [
     'concatenate_proposals',
     'detect_veto',
     'display_agent_event',
-    'display_event',
     'docker_sock_gid',
     'extract',
     'find_next_story',

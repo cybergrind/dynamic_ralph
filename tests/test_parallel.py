@@ -75,6 +75,9 @@ class FakeBackend:
             completion_status='end_turn' if exit_code == 0 else 'error',
         )
 
+    def env_filter(self, env: dict[str, str]) -> dict[str, str]:
+        return env
+
 
 # ---------------------------------------------------------------------------
 # Helpers for building inline Python scripts
@@ -315,15 +318,20 @@ class TestLaunchParallelAgents:
         assert result.exit_code == 1
         assert result.completion_status == 'crashed'
 
-    def test_strips_claudecode_env(self, tmp_path: Path):
-        """CLAUDECODE is stripped from the environment passed to agents."""
+    def test_env_filter_is_applied(self, tmp_path: Path):
+        """backend.env_filter() is called to prepare the subprocess environment."""
         # Script that checks for CLAUDECODE in its environment
         script = textwrap.dedent("""\
             import json, os, sys
             has_claudecode = 'CLAUDECODE' in os.environ
             print(json.dumps({"kind": "assistant", "text": str(has_claudecode)}), flush=True)
         """)
-        backend = FakeBackend(script)
+
+        class FilteringBackend(FakeBackend):
+            def env_filter(self, env):
+                return {k: v for k, v in env.items() if k != 'CLAUDECODE'}
+
+        backend = FilteringBackend(script)
         prompts = {'env-test': 'check env'}
 
         with patch.dict(os.environ, {'CLAUDECODE': '1'}):

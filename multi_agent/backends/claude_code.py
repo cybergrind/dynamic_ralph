@@ -20,6 +20,14 @@ class ClaudeCodeBackend:
     """Backend for the Claude Code CLI (``npx @anthropic-ai/claude-code``)."""
 
     # ------------------------------------------------------------------
+    # env_filter
+    # ------------------------------------------------------------------
+
+    def env_filter(self, env: dict[str, str]) -> dict[str, str]:
+        """Strip CLAUDECODE to prevent nested-session detection."""
+        return {k: v for k, v in env.items() if k != 'CLAUDECODE'}
+
+    # ------------------------------------------------------------------
     # build_command
     # ------------------------------------------------------------------
 
