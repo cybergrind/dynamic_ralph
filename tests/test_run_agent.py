@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from bin.run_agent import build_interactive_docker_command
+from bin.run_agent import build_interactive_docker_command, parse_args
 
 
 @pytest.fixture(autouse=True)
@@ -130,3 +130,68 @@ class TestBuildInteractiveDockerCommand:
         from multi_agent.constants import GIT_EMAIL
 
         assert f'GIT_COMMITTER_EMAIL={GIT_EMAIL}' in cmd
+
+
+class TestParseArgs:
+    """Tests for parse_args prompt and -p handling."""
+
+    def test_no_args_no_prompt(self):
+        args, extra = parse_args([])
+        assert args.prompt is None
+        assert args.print_mode is False
+
+    def test_positional_prompt(self):
+        args, extra = parse_args(['/multi-agent-fast do something'])
+        assert args.prompt == '/multi-agent-fast do something'
+        assert args.print_mode is False
+
+    def test_print_mode_short_flag(self):
+        args, extra = parse_args(['-p', 'run tests'])
+        assert args.prompt == 'run tests'
+        assert args.print_mode is True
+
+    def test_print_mode_long_flag(self):
+        args, extra = parse_args(['--print', 'run tests'])
+        assert args.prompt == 'run tests'
+        assert args.print_mode is True
+
+    def test_build_with_prompt(self):
+        args, extra = parse_args(['--build', '/multi-agent-fast question'])
+        assert args.build is True
+        assert args.prompt == '/multi-agent-fast question'
+
+    def test_build_with_print_mode(self):
+        args, extra = parse_args(['--build', '-p', 'do something'])
+        assert args.build is True
+        assert args.print_mode is True
+        assert args.prompt == 'do something'
+
+    def test_extra_args_after_separator(self):
+        args, extra = parse_args(['-p', 'prompt', '--', '--resume'])
+        assert args.prompt == 'prompt'
+        assert extra == ['--resume']
+
+
+class TestDockerCommandWithPrompt:
+    """Tests for prompt/print-mode forwarding to docker command."""
+
+    def test_interactive_prompt_forwarded(self):
+        cmd = build_interactive_docker_command(workspace='/src', prompt='do something')
+        assert cmd[-1] == 'do something'
+        assert '-p' not in cmd[cmd.index('claude'):]
+
+    def test_print_mode_prompt_forwarded(self):
+        cmd = build_interactive_docker_command(workspace='/src', prompt='do something', print_mode=True)
+        claude_idx = cmd.index('claude')
+        claude_args = cmd[claude_idx:]
+        assert '-p' in claude_args
+        p_idx = claude_args.index('-p')
+        assert claude_args[p_idx + 1] == 'do something'
+
+    def test_print_mode_removes_interactive_flag(self):
+        cmd = build_interactive_docker_command(workspace='/src', prompt='test', print_mode=True)
+        assert '-it' not in cmd
+
+    def test_no_prompt_no_extra_args(self):
+        cmd = build_interactive_docker_command(workspace='/src')
+        assert cmd[-1] == '--dangerously-skip-permissions'

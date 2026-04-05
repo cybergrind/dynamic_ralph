@@ -21,8 +21,15 @@ def build_interactive_docker_command(
     image: str = RALPH_IMAGE,
     workspace: str | None = None,
     extra_args: list[str] | None = None,
+    prompt: str | None = None,
+    print_mode: bool = False,
 ) -> list[str]:
-    """Build a ``docker run -it`` command for interactive Claude Code use."""
+    """Build a ``docker run`` command for Claude Code use.
+
+    When *print_mode* is True the container runs non-interactively
+    (``claude -p <prompt>``).  Otherwise a TTY is allocated for an
+    interactive session, optionally pre-filled with *prompt*.
+    """
     if workspace is None:
         workspace = os.getcwd()
 
@@ -32,8 +39,14 @@ def build_interactive_docker_command(
     cmd: list[str] = [
         'docker',
         'run',
-        '-it',
-        '--rm',
+    ]
+
+    if print_mode:
+        cmd.append('--rm')
+    else:
+        cmd.extend(['-it', '--rm'])
+
+    cmd.extend([
         '--group-add',
         docker_sock_gid(),
         '-e',
@@ -69,7 +82,12 @@ def build_interactive_docker_command(
         '--add-dir',
         '/opt/ralph',
         '--dangerously-skip-permissions',
-    ]
+    ])
+
+    if print_mode and prompt:
+        cmd.extend(['-p', prompt])
+    elif prompt:
+        cmd.append(prompt)
 
     if extra_args:
         cmd.extend(extra_args)
@@ -90,6 +108,19 @@ def parse_args(argv: list[str] | None = None) -> tuple[argparse.Namespace, list[
         '--build',
         action='store_true',
         help='Rebuild Docker image before launching',
+    )
+    parser.add_argument(
+        '-p',
+        '--print',
+        dest='print_mode',
+        action='store_true',
+        help='Run in non-interactive print mode (claude -p)',
+    )
+    parser.add_argument(
+        'prompt',
+        nargs='?',
+        default=None,
+        help='Prompt to send to Claude (interactive by default, non-interactive with -p)',
     )
 
     if argv is None:
@@ -112,7 +143,11 @@ def main() -> None:
     if args.build or not image_exists():
         build_image()
 
-    cmd = build_interactive_docker_command(extra_args=extra or None)
+    cmd = build_interactive_docker_command(
+        extra_args=extra or None,
+        prompt=args.prompt,
+        print_mode=args.print_mode,
+    )
     os.execvp(cmd[0], cmd)
 
 
