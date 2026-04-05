@@ -277,6 +277,7 @@ def _enforce_quorum(
     output_schema: OutputSchema | None = None,
     tracer: TraceWriter | None = None,
     trace_parent_id: str | None = None,
+    identity_names: dict[str, str] | None = None,
 ) -> dict[str, AgentResult]:
     """Retry failed agents once. Raise RuntimeError if still below *quorum_min*."""
     failed = {label: prompts[label] for label, r in results.items() if not _agent_succeeded(r)}
@@ -318,6 +319,7 @@ def _enforce_quorum(
         output_schema=output_schema,
         tracer=tracer,
         trace_parent_id=retry_span.span_id if retry_span else None,
+        identity_names=identity_names,
     )
 
     merged = dict(results)
@@ -363,6 +365,7 @@ def run_propose(
     """
     cfg = phase_config or PhaseConfig()
     label_map = _assign_labels(list(identity_texts.keys()))
+    reverse_label_map = {label: identity for identity, label in label_map.items()}
     prompts: dict[str, str] = {}
     for identity, label in label_map.items():
         prompts[label] = build_propose_prompt(
@@ -390,6 +393,7 @@ def run_propose(
         output_schema=propose_schema,
         tracer=tracer,
         trace_parent_id=phase_span_id if tracer else None,
+        identity_names=reverse_label_map,
     )
     results = _enforce_quorum(
         results,
@@ -403,6 +407,7 @@ def run_propose(
         output_schema=propose_schema,
         tracer=tracer,
         trace_parent_id=phase_span_id if tracer else None,
+        identity_names=reverse_label_map,
     )
 
     if tracer and phase_span:
@@ -485,6 +490,7 @@ def run_debate(
     debate_schema = OutputSchema.from_model(debate_cls)
 
     label_map = _assign_labels(list(identity_texts.keys()))
+    reverse_label_map = {label: identity for identity, label in label_map.items()}
     all_proposals_text = concatenate_proposals(proposals)
     prompts: dict[str, str] = {}
     for identity, label in label_map.items():
@@ -511,6 +517,7 @@ def run_debate(
         output_schema=debate_schema,
         tracer=tracer,
         trace_parent_id=phase_span_id if tracer else None,
+        identity_names=reverse_label_map,
     )
     results = _enforce_quorum(
         results,
@@ -524,6 +531,7 @@ def run_debate(
         output_schema=debate_schema,
         tracer=tracer,
         trace_parent_id=phase_span_id if tracer else None,
+        identity_names=reverse_label_map,
     )
 
     if tracer and phase_span:
@@ -581,6 +589,7 @@ def run_vote(
     """
     cfg = phase_config or PhaseConfig()
     label_map = _assign_labels(list(identity_texts.keys()))
+    reverse_label_map = {label: identity for identity, label in label_map.items()}
     all_proposals_text = concatenate_proposals(proposals)
     all_debate_text = concatenate_debate(debate_entries)
     valid_proposals = list(proposals.keys())
@@ -612,6 +621,7 @@ def run_vote(
         output_schema=vote_schema,
         tracer=tracer,
         trace_parent_id=phase_span_id if tracer else None,
+        identity_names=reverse_label_map,
     )
     results = _enforce_quorum(
         results,
@@ -625,6 +635,7 @@ def run_vote(
         output_schema=vote_schema,
         tracer=tracer,
         trace_parent_id=phase_span_id if tracer else None,
+        identity_names=reverse_label_map,
     )
 
     votes_dir = round_dir / 'votes'
@@ -642,6 +653,7 @@ def run_vote(
                 log_dir=log_dir,
                 log_prefix=f'{phase_prefix}retry-{label}-',
                 output_schema=vote_schema,
+                identity_names=reverse_label_map,
             )
             return retry[label]
 
@@ -786,7 +798,7 @@ def run_multi_agent(
     log_dir.mkdir(parents=True, exist_ok=True)
 
     tracer = TraceWriter(work / 'trace.jsonl')
-    run_span = tracer.begin('run', 'run', 'run')
+    run_span = tracer.begin('run', 'run', 'run', question=question)
 
     # Build frame
     frame = Frame(

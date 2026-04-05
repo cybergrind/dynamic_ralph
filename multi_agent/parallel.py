@@ -107,6 +107,7 @@ def launch_parallel_agents(
     output_schema: OutputSchema | None = None,
     tracer: TraceWriter | None = None,
     trace_parent_id: str | None = None,
+    identity_names: dict[str, str] | None = None,
 ) -> dict[str, AgentResult]:
     """Launch multiple agents in parallel, returning results keyed by label.
 
@@ -129,8 +130,12 @@ def launch_parallel_agents(
         log_path = log_dir / f'{log_prefix}{label}.jsonl'
 
         span_id = f'{trace_parent_id}-{label}' if trace_parent_id else f'agent-{label}'
+        identity = identity_names.get(label) if identity_names else None
+        span_details: dict[str, object] = {'log_path': str(log_path)}
+        if identity:
+            span_details['identity'] = identity
         trace_span = (
-            tracer.begin(span_id, 'agent', f'agent-{label}', parent_id=trace_parent_id, log_path=str(log_path))
+            tracer.begin(span_id, 'agent', f'agent-{label}', parent_id=trace_parent_id, **span_details)
             if tracer
             else None
         )

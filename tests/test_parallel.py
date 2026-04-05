@@ -549,6 +549,62 @@ class TestTracerIntegration:
         assert len(ends) == 1
         assert 'structured_output' not in ends[0]['details']
 
+    def test_identity_names_recorded_in_trace(self, tmp_path: Path):
+        """identity_names kwarg causes identity to appear in agent begin span details."""
+        from multi_agent.trace import TraceWriter
+
+        script = _make_event_script(
+            {'kind': 'assistant', 'text': 'hello'},
+            {'kind': 'result', 'text': 'done'},
+        )
+        backend = FakeBackend(script)
+        trace_path = tmp_path / 'trace.jsonl'
+        tracer = TraceWriter(trace_path)
+
+        launch_parallel_agents(
+            {'A': 'do A', 'B': 'do B'},
+            backend=backend,
+            log_dir=tmp_path,
+            timeout=30,
+            tracer=tracer,
+            trace_parent_id='test-phase',
+            identity_names={'A': 'i_consul.md', 'B': 'i_pytest.md'},
+        )
+
+        lines = trace_path.read_text().strip().splitlines()
+        records = [json.loads(line) for line in lines]
+        begins = [r for r in records if r['event'] == 'begin']
+
+        identities = {r['details'].get('identity') for r in begins}
+        assert 'i_consul.md' in identities
+        assert 'i_pytest.md' in identities
+
+    def test_identity_names_none_omits_identity(self, tmp_path: Path):
+        """Without identity_names, agent begin spans have no identity detail."""
+        from multi_agent.trace import TraceWriter
+
+        script = _make_event_script(
+            {'kind': 'assistant', 'text': 'hello'},
+        )
+        backend = FakeBackend(script)
+        trace_path = tmp_path / 'trace.jsonl'
+        tracer = TraceWriter(trace_path)
+
+        launch_parallel_agents(
+            {'A': 'do A'},
+            backend=backend,
+            log_dir=tmp_path,
+            timeout=30,
+            tracer=tracer,
+            trace_parent_id='test-phase',
+        )
+
+        lines = trace_path.read_text().strip().splitlines()
+        records = [json.loads(line) for line in lines]
+        begins = [r for r in records if r['event'] == 'begin']
+        assert len(begins) == 1
+        assert 'identity' not in begins[0]['details']
+
     def test_no_tracer_no_trace_file(self, tmp_path: Path):
         """When tracer is None, no trace file is created."""
         script = _make_event_script(

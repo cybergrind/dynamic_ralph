@@ -166,6 +166,76 @@ class TestLoadAgentSpans:
         assert len(spans) == 1
         assert spans[0].structured_output == structured
 
+    def test_identity_loaded_from_begin_details(self, tmp_path):
+        """identity in agent begin details is captured in AgentSpanInfo."""
+        from multi_agent.trace import load_agent_spans
+
+        trace_path = tmp_path / 'trace.jsonl'
+        self._write_trace(
+            trace_path,
+            [
+                {
+                    'event': 'begin',
+                    'span_id': 'agent-A',
+                    'kind': 'agent',
+                    'label': 'agent-A',
+                    'started_at': '2026-04-05T10:00:00+00:00',
+                    't_offset_secs': 0.0,
+                    'parent_id': 'propose',
+                    'details': {'log_path': '/logs/A.jsonl', 'identity': 'i_consul.md'},
+                },
+                {
+                    'event': 'end',
+                    'span_id': 'agent-A',
+                    'kind': 'agent',
+                    'label': 'agent-A',
+                    'ended_at': '2026-04-05T10:00:05+00:00',
+                    't_offset_secs': 5.0,
+                    'elapsed_secs': 5.0,
+                    'details': {'cost_usd': 0.05, 'timed_out': False},
+                },
+            ],
+        )
+
+        spans = load_agent_spans(trace_path)
+        assert len(spans) == 1
+        assert spans[0].identity == 'i_consul.md'
+
+    def test_identity_none_when_absent(self, tmp_path):
+        """identity defaults to None when not in begin details (backward compat)."""
+        from multi_agent.trace import load_agent_spans
+
+        trace_path = tmp_path / 'trace.jsonl'
+        self._write_trace(
+            trace_path,
+            [
+                {
+                    'event': 'begin',
+                    'span_id': 'agent-A',
+                    'kind': 'agent',
+                    'label': 'agent-A',
+                    'started_at': '2026-04-05T10:00:00+00:00',
+                    't_offset_secs': 0.0,
+                    'parent_id': 'propose',
+                    'details': {'log_path': '/logs/A.jsonl'},
+                },
+                {
+                    'event': 'end',
+                    'span_id': 'agent-A',
+                    'kind': 'agent',
+                    'label': 'agent-A',
+                    'ended_at': '2026-04-05T10:00:05+00:00',
+                    't_offset_secs': 5.0,
+                    'elapsed_secs': 5.0,
+                    'details': {'cost_usd': 0.05, 'timed_out': False},
+                },
+            ],
+        )
+
+        spans = load_agent_spans(trace_path)
+        assert len(spans) == 1
+        assert spans[0].identity is None
+
     def test_structured_output_none_when_absent(self, tmp_path):
         """structured_output defaults to None when not in trace details."""
         from multi_agent.trace import load_agent_spans
@@ -403,6 +473,133 @@ class TestFormatTraceReport:
         trace_path.write_text('')
         report = format_trace_report(trace_path)
         assert 'no trace data' in report.lower() or report.strip() == ''
+
+    def test_question_shown_in_report(self, tmp_path):
+        """Question from run begin details appears in formatted report."""
+        trace_path = tmp_path / 'trace.jsonl'
+        events = [
+            {
+                'event': 'begin',
+                'span_id': 'run',
+                'kind': 'run',
+                'label': 'run',
+                'started_at': '2026-04-05T10:00:00+00:00',
+                't_offset_secs': 0.0,
+                'parent_id': None,
+                'details': {'question': 'How should we refactor the auth module?'},
+            },
+            {
+                'event': 'end',
+                'span_id': 'run',
+                'kind': 'run',
+                'label': 'run',
+                'ended_at': '2026-04-05T10:00:30+00:00',
+                't_offset_secs': 30.0,
+                'elapsed_secs': 30.0,
+                'details': {},
+            },
+        ]
+        self._write_trace(trace_path, events)
+        report = format_trace_report(trace_path)
+        assert 'Question: How should we refactor the auth module?' in report
+
+    def test_identity_shown_in_agent_line(self, tmp_path):
+        """Identity name appears in agent line of formatted report."""
+        trace_path = tmp_path / 'trace.jsonl'
+        events = [
+            {
+                'event': 'begin',
+                'span_id': 'run',
+                'kind': 'run',
+                'label': 'run',
+                'started_at': '2026-04-05T10:00:00+00:00',
+                't_offset_secs': 0.0,
+                'parent_id': None,
+                'details': {},
+            },
+            {
+                'event': 'begin',
+                'span_id': 'r1-propose',
+                'kind': 'phase',
+                'label': 'propose',
+                'started_at': '2026-04-05T10:00:00+00:00',
+                't_offset_secs': 0.0,
+                'parent_id': 'run',
+                'details': {},
+            },
+            {
+                'event': 'begin',
+                'span_id': 'r1-propose-A',
+                'kind': 'agent',
+                'label': 'agent-A',
+                'started_at': '2026-04-05T10:00:00+00:00',
+                't_offset_secs': 0.0,
+                'parent_id': 'r1-propose',
+                'details': {'identity': 'i_consul.md'},
+            },
+            {
+                'event': 'end',
+                'span_id': 'r1-propose-A',
+                'kind': 'agent',
+                'label': 'agent-A',
+                'ended_at': '2026-04-05T10:00:30+00:00',
+                't_offset_secs': 30.0,
+                'elapsed_secs': 30.0,
+                'details': {'cost_usd': 0.05, 'timed_out': False},
+            },
+            {
+                'event': 'end',
+                'span_id': 'r1-propose',
+                'kind': 'phase',
+                'label': 'propose',
+                'ended_at': '2026-04-05T10:00:30+00:00',
+                't_offset_secs': 30.0,
+                'elapsed_secs': 30.0,
+                'details': {},
+            },
+            {
+                'event': 'end',
+                'span_id': 'run',
+                'kind': 'run',
+                'label': 'run',
+                'ended_at': '2026-04-05T10:00:30+00:00',
+                't_offset_secs': 30.0,
+                'elapsed_secs': 30.0,
+                'details': {},
+            },
+        ]
+        self._write_trace(trace_path, events)
+        report = format_trace_report(trace_path)
+        assert '(i_consul.md)' in report
+
+    def test_question_omitted_when_absent(self, tmp_path):
+        """Backward compat: no question in details → no Question line."""
+        trace_path = tmp_path / 'trace.jsonl'
+        events = [
+            {
+                'event': 'begin',
+                'span_id': 'run',
+                'kind': 'run',
+                'label': 'run',
+                'started_at': '2026-04-05T10:00:00+00:00',
+                't_offset_secs': 0.0,
+                'parent_id': None,
+                'details': {},
+            },
+            {
+                'event': 'end',
+                'span_id': 'run',
+                'kind': 'run',
+                'label': 'run',
+                'ended_at': '2026-04-05T10:00:30+00:00',
+                't_offset_secs': 30.0,
+                'elapsed_secs': 30.0,
+                'details': {},
+            },
+        ]
+        self._write_trace(trace_path, events)
+        report = format_trace_report(trace_path)
+        assert 'Question:' not in report
 
     def test_agent_details_shown(self, tmp_path):
         """Agent cost and timed_out status appear in the report."""

@@ -1122,3 +1122,61 @@ class TestTraceIntegration:
         begins = {r['span_id'] for r in records if r['event'] == 'begin'}
         ends = {r['span_id'] for r in records if r['event'] == 'end'}
         assert begins == ends, f'Unmatched spans: begins={begins - ends}, ends={ends - begins}'
+
+    def test_run_span_includes_question(self, tmp_path: Path) -> None:
+        """Run begin span records the initial question in details."""
+        import json
+
+        labels = ['A', 'B', 'C', 'D', 'E']
+        effects = [
+            {lbl: _proposal_result(lbl) for lbl in labels},
+            {lbl: _debate_result(lbl) for lbl in labels},
+            {lbl: _vote_result('A') for lbl in labels},
+        ]
+
+        with patch('multi_agent.orchestrate.launch_parallel_agents', side_effect=effects):
+            run_multi_agent(
+                'How should we design the API?',
+                identities=_TEST_IDENTITIES,
+                num_agents=5,
+                max_rounds=3,
+                working_dir=tmp_path,
+                codex_text=_TEST_CODEX,
+                identity_texts=_TEST_IDENTITY_TEXTS,
+            )
+
+        run_dirs = [d for d in tmp_path.iterdir() if d.is_dir()]
+        run_dir = run_dirs[0]
+        trace_path = run_dir / 'trace.jsonl'
+        records = [json.loads(line) for line in trace_path.read_text().strip().splitlines()]
+
+        run_begins = [r for r in records if r['event'] == 'begin' and r['kind'] == 'run']
+        assert len(run_begins) == 1
+        assert run_begins[0]['details']['question'] == 'How should we design the API?'
+
+    def test_agent_spans_include_identity(self, tmp_path: Path) -> None:
+        """Agent begin spans record the identity filename in details."""
+
+        labels = ['A', 'B', 'C', 'D', 'E']
+        effects = [
+            {lbl: _proposal_result(lbl) for lbl in labels},
+            {lbl: _debate_result(lbl) for lbl in labels},
+            {lbl: _vote_result('A') for lbl in labels},
+        ]
+
+        with patch('multi_agent.orchestrate.launch_parallel_agents', side_effect=effects) as mock:
+            run_multi_agent(
+                'Test question',
+                identities=_TEST_IDENTITIES,
+                num_agents=5,
+                max_rounds=3,
+                working_dir=tmp_path,
+                codex_text=_TEST_CODEX,
+                identity_texts=_TEST_IDENTITY_TEXTS,
+            )
+
+        # All calls to launch_parallel_agents should include identity_names
+        for call in mock.call_args_list:
+            kwargs = call.kwargs
+            assert 'identity_names' in kwargs, f'identity_names not passed: {kwargs.keys()}'
+            assert isinstance(kwargs['identity_names'], dict)

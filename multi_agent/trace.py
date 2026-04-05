@@ -141,6 +141,7 @@ class AgentSpanInfo:
     cost_usd: float | None
     timed_out: bool
     structured_output: dict | None = None
+    identity: str | None = None
 
 
 def load_agent_spans(trace_path: Path) -> list[AgentSpanInfo]:
@@ -174,6 +175,7 @@ def load_agent_spans(trace_path: Path) -> list[AgentSpanInfo]:
                     cost_usd=details.get('cost_usd'),
                     timed_out=details.get('timed_out', False),
                     structured_output=details.get('structured_output'),
+                    identity=b_details.get('identity'),
                 )
             )
 
@@ -215,6 +217,14 @@ def format_trace_report(trace_path: Path) -> str:
         lines.append(f'Total: {elapsed}s')
         lines.append('')
 
+    run_begin = begin_events.get('run')
+    if run_begin:
+        question = run_begin.get('details', {}).get('question')
+        if question:
+            display_q = question if len(question) <= 120 else question[:117] + '...'
+            lines.append(f'Question: {display_q}')
+            lines.append('')
+
     # Group spans by parent
     children: dict[str | None, list[str]] = {}
     for span_id, ev in begin_events.items():
@@ -225,12 +235,14 @@ def format_trace_report(trace_path: Path) -> str:
         begin = begin_events.get(span_id, {})
         end = end_events.get(span_id)
         label = begin.get('label', span_id)
+        identity = begin.get('details', {}).get('identity')
+        agent_prefix = f'    {label} ({identity})' if identity else f'    {label}'
         if end:
             elapsed = end.get('elapsed_secs', '?')
             details = end.get('details', {})
             cost = details.get('cost_usd')
             timed_out = details.get('timed_out', False)
-            parts = [f'    {label}  {elapsed}s']
+            parts = [f'{agent_prefix}  {elapsed}s']
             if cost is not None:
                 parts.append(f'${cost:.2f}')
             if timed_out:
@@ -239,7 +251,7 @@ def format_trace_report(trace_path: Path) -> str:
                 parts.append('ok')
             return '  '.join(parts)
         else:
-            return f'    {label}  (in progress)'
+            return f'{agent_prefix}  (in progress)'
 
     def _format_phase(span_id: str) -> list[str]:
         begin = begin_events.get(span_id, {})

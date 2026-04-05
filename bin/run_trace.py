@@ -296,6 +296,8 @@ def _build_app():
 
             content = self.query_one('#introspect-content', Static)
             header = f'Agent: {span.label}'
+            if span.identity:
+                header += f'  ({span.identity})'
             if span.elapsed_secs is not None:
                 header += f'  |  {span.elapsed_secs}s'
             if span.cost_usd is not None:
