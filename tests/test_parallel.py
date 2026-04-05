@@ -12,7 +12,9 @@ from pathlib import Path
 from typing import Iterator
 from unittest.mock import patch
 
-from multi_agent.backend import AgentEvent, AgentResult, LaunchConfig, OutputSchema
+import pytest
+
+from multi_agent.backend import AgentEvent, AgentResult, LaunchConfig
 from multi_agent.parallel import (
     _RETAINED_KINDS,
     _SubprocessWatchdog,
@@ -98,22 +100,16 @@ def _make_event_script(*events: dict, sleep_before: float = 0, exit_code: int = 
     return '; '.join(lines)
 
 
-def _cfg(
-    backend: FakeBackend,
-    tmp_path: Path,
-    *,
-    timeout: float = 30,
-    output_schema: OutputSchema | None = None,
-    log_prefix: str = '',
-) -> LaunchConfig:
-    """Shorthand to build LaunchConfig for tests."""
-    return LaunchConfig(
-        backend=backend,
-        log_dir=tmp_path,
-        timeout=timeout,
-        output_schema=output_schema,
-        log_prefix=log_prefix,
-    )
+@pytest.fixture
+def subprocess_cfg(tmp_path: Path):
+    """Factory: events → LaunchConfig with FakeBackend (real subprocess)."""
+
+    def _make(*events: dict, timeout: float = 30, **kw: object) -> LaunchConfig:
+        script = _make_event_script(*events)
+        backend = FakeBackend(script)
+        return LaunchConfig(backend=backend, log_dir=tmp_path, timeout=timeout)
+
+    return _make
 
 
 def _make_hang_script() -> str:
@@ -225,16 +221,15 @@ class TestSubprocessWatchdog:
 
 
 class TestLaunchParallelAgents:
-    def test_basic_parallel_execution(self, tmp_path: Path):
+    def test_basic_parallel_execution(self, subprocess_cfg):
         """Multiple agents run and return results keyed by label."""
-        script = _make_event_script(
+        cfg = subprocess_cfg(
             {'kind': 'assistant', 'text': 'hello'},
             {'kind': 'result', 'text': 'done'},
         )
-        backend = FakeBackend(script)
         prompts = {'agent-a': 'do task A', 'agent-b': 'do task B'}
 
-        results = launch_parallel_agents(prompts, _cfg(backend, tmp_path))
+        results = launch_parallel_agents(prompts, cfg)
 
         assert set(results.keys()) == {'agent-a', 'agent-b'}
         for label, result in results.items():
@@ -242,15 +237,12 @@ class TestLaunchParallelAgents:
             assert result.completion_status == 'end_turn'
             assert result.final_response == 'hello'
 
-    def test_log_files_created(self, tmp_path: Path):
+    def test_log_files_created(self, tmp_path: Path, subprocess_cfg):
         """Each agent gets a .jsonl and .stderr.log file."""
-        script = _make_event_script(
-            {'kind': 'assistant', 'text': 'logged'},
-        )
-        backend = FakeBackend(script)
+        cfg = subprocess_cfg({'kind': 'assistant', 'text': 'logged'})
         prompts = {'alpha': 'prompt alpha'}
 
-        launch_parallel_agents(prompts, _cfg(backend, tmp_path))
+        launch_parallel_agents(prompts, cfg)
 
         assert (tmp_path / 'alpha.jsonl').exists()
         assert (tmp_path / 'alpha.stderr.log').exists()
@@ -280,7 +272,7 @@ class TestLaunchParallelAgents:
         backend = TrackingBackend(script)
         prompts = {'filter-test': 'test prompt'}
 
-        launch_parallel_agents(prompts, _cfg(backend, tmp_path))
+        launch_parallel_agents(prompts, LaunchConfig(backend=backend, log_dir=tmp_path))
 
         # extract_result should only get retained kinds
         assert len(received_events) == 1
@@ -289,18 +281,17 @@ class TestLaunchParallelAgents:
         assert 'tool_use' not in kinds
         assert 'tool_result' not in kinds
 
-    def test_all_events_written_to_disk(self, tmp_path: Path):
+    def test_all_events_written_to_disk(self, tmp_path: Path, subprocess_cfg):
         """All events (including tool events) are written to the disk log."""
-        script = _make_event_script(
+        cfg = subprocess_cfg(
             {'kind': 'assistant', 'text': 'response'},
             {'kind': 'tool_use', 'text': 'Bash: ls'},
             {'kind': 'tool_result', 'text': 'file.py'},
             {'kind': 'result', 'text': 'done'},
         )
-        backend = FakeBackend(script)
         prompts = {'disk-test': 'test prompt'}
 
-        launch_parallel_agents(prompts, _cfg(backend, tmp_path))
+        launch_parallel_agents(prompts, cfg)
 
         log_content = (tmp_path / 'disk-test.jsonl').read_text()
         assert 'tool_use' in log_content
@@ -313,7 +304,7 @@ class TestLaunchParallelAgents:
         backend = FakeBackend(script)
         prompts = {'hang-agent': 'do something'}
 
-        results = launch_parallel_agents(prompts, _cfg(backend, tmp_path, timeout=0.05))
+        results = launch_parallel_agents(prompts, LaunchConfig(backend=backend, log_dir=tmp_path, timeout=0.05))
 
         assert 'hang-agent' in results
         result = results['hang-agent']
@@ -330,7 +321,7 @@ class TestLaunchParallelAgents:
         backend = CrashingBackend()
         prompts = {'crash-agent': 'do something'}
 
-        results = launch_parallel_agents(prompts, _cfg(backend, tmp_path))
+        results = launch_parallel_agents(prompts, LaunchConfig(backend=backend, log_dir=tmp_path))
 
         assert 'crash-agent' in results
         result = results['crash-agent']
@@ -354,7 +345,7 @@ class TestLaunchParallelAgents:
         prompts = {'env-test': 'check env'}
 
         with patch.dict(os.environ, {'CLAUDECODE': '1'}):
-            results = launch_parallel_agents(prompts, _cfg(backend, tmp_path))
+            results = launch_parallel_agents(prompts, LaunchConfig(backend=backend, log_dir=tmp_path))
 
         result = results['env-test']
         assert result.final_response == 'False'
@@ -369,7 +360,7 @@ class TestLaunchParallelAgents:
         backend = FakeBackend(script)
         prompts = {'stderr-test': 'test prompt'}
 
-        launch_parallel_agents(prompts, _cfg(backend, tmp_path))
+        launch_parallel_agents(prompts, LaunchConfig(backend=backend, log_dir=tmp_path))
 
         stderr_content = (tmp_path / 'stderr-test.stderr.log').read_text()
         assert 'warning on stderr' in stderr_content
@@ -382,7 +373,7 @@ class TestLaunchParallelAgents:
         prompts = {f'agent-{i}': f'prompt {i}' for i in range(8)}
 
         with patch('multi_agent.parallel.MULTI_AGENT_MAX_WORKERS', 3):
-            results = launch_parallel_agents(prompts, _cfg(backend, tmp_path))
+            results = launch_parallel_agents(prompts, LaunchConfig(backend=backend, log_dir=tmp_path))
 
         # All agents still complete, just with capped concurrency
         assert len(results) == 8
@@ -403,7 +394,7 @@ class TestLaunchParallelAgents:
         prompts = {'fail-agent': 'test'}
 
         # Should not raise — the exception is caught and produces 'crashed'
-        results = launch_parallel_agents(prompts, _cfg(backend, tmp_path))
+        results = launch_parallel_agents(prompts, LaunchConfig(backend=backend, log_dir=tmp_path))
 
         assert results['fail-agent'].completion_status == 'crashed'
 
@@ -424,7 +415,7 @@ class TestLaunchParallelAgents:
 
         launch_parallel_agents(
             {'A': 'prompt A'},
-            _cfg(backend, tmp_path, output_schema=schema),
+            LaunchConfig(backend=backend, log_dir=tmp_path, output_schema=schema),
         )
 
         assert len(received) == 1
@@ -442,7 +433,7 @@ class TestLaunchParallelAgents:
         script = _make_event_script({'kind': 'assistant', 'text': 'ok'})
         backend = TrackingBackend(script)
 
-        launch_parallel_agents({'A': 'prompt A'}, _cfg(backend, tmp_path))
+        launch_parallel_agents({'A': 'prompt A'}, LaunchConfig(backend=backend, log_dir=tmp_path))
 
         assert received == [None]
 
@@ -453,21 +444,17 @@ class TestLaunchParallelAgents:
 
 
 class TestTracerIntegration:
-    def test_tracer_emits_agent_spans(self, tmp_path: Path):
+    def test_tracer_emits_agent_spans(self, tmp_path: Path, subprocess_cfg):
         """When tracing is passed, begin/end spans are emitted per agent."""
         from multi_agent.trace import TraceWriter
 
-        script = _make_event_script(
-            {'kind': 'assistant', 'text': 'hello'},
-            {'kind': 'result', 'text': 'done'},
-        )
-        backend = FakeBackend(script)
+        cfg = subprocess_cfg({'kind': 'assistant', 'text': 'hello'}, {'kind': 'result', 'text': 'done'})
         trace_path = tmp_path / 'trace.jsonl'
         tracing = TracingContext(writer=TraceWriter(trace_path), parent_span_id='test-phase')
 
         results = launch_parallel_agents(
             {'A': 'do A', 'B': 'do B'},
-            _cfg(backend, tmp_path),
+            cfg,
             tracing=tracing,
         )
 
@@ -506,7 +493,9 @@ class TestTracerIntegration:
         trace_path = tmp_path / 'trace.jsonl'
         tracing = TracingContext(writer=TraceWriter(trace_path), parent_span_id='vote-phase')
 
-        results = launch_parallel_agents({'A': 'vote'}, _cfg(backend, tmp_path), tracing=tracing)
+        results = launch_parallel_agents(
+            {'A': 'vote'}, LaunchConfig(backend=backend, log_dir=tmp_path), tracing=tracing
+        )
 
         assert results['A'].structured_output == structured
         lines = trace_path.read_text().strip().splitlines()
@@ -515,19 +504,15 @@ class TestTracerIntegration:
         assert len(ends) == 1
         assert ends[0]['details']['structured_output'] == structured
 
-    def test_tracer_omits_structured_output_when_none(self, tmp_path: Path):
+    def test_tracer_omits_structured_output_when_none(self, tmp_path: Path, subprocess_cfg):
         """Agent span end details omit structured_output when None (no clutter)."""
         from multi_agent.trace import TraceWriter
 
-        script = _make_event_script(
-            {'kind': 'assistant', 'text': 'hello'},
-            {'kind': 'result', 'text': 'done'},
-        )
-        backend = FakeBackend(script)
+        cfg = subprocess_cfg({'kind': 'assistant', 'text': 'hello'}, {'kind': 'result', 'text': 'done'})
         trace_path = tmp_path / 'trace.jsonl'
         tracing = TracingContext(writer=TraceWriter(trace_path), parent_span_id='phase')
 
-        launch_parallel_agents({'A': 'task'}, _cfg(backend, tmp_path), tracing=tracing)
+        launch_parallel_agents({'A': 'task'}, cfg, tracing=tracing)
 
         lines = trace_path.read_text().strip().splitlines()
         records = [json.loads(line) for line in lines]
@@ -535,15 +520,11 @@ class TestTracerIntegration:
         assert len(ends) == 1
         assert 'structured_output' not in ends[0]['details']
 
-    def test_identity_names_recorded_in_trace(self, tmp_path: Path):
+    def test_identity_names_recorded_in_trace(self, tmp_path: Path, subprocess_cfg):
         """identity_names in TracingContext causes identity in agent begin span."""
         from multi_agent.trace import TraceWriter
 
-        script = _make_event_script(
-            {'kind': 'assistant', 'text': 'hello'},
-            {'kind': 'result', 'text': 'done'},
-        )
-        backend = FakeBackend(script)
+        cfg = subprocess_cfg({'kind': 'assistant', 'text': 'hello'}, {'kind': 'result', 'text': 'done'})
         trace_path = tmp_path / 'trace.jsonl'
         tracing = TracingContext(
             writer=TraceWriter(trace_path),
@@ -551,7 +532,7 @@ class TestTracerIntegration:
             identity_names={'A': 'i_consul.md', 'B': 'i_pytest.md'},
         )
 
-        launch_parallel_agents({'A': 'do A', 'B': 'do B'}, _cfg(backend, tmp_path), tracing=tracing)
+        launch_parallel_agents({'A': 'do A', 'B': 'do B'}, cfg, tracing=tracing)
 
         lines = trace_path.read_text().strip().splitlines()
         records = [json.loads(line) for line in lines]
@@ -560,18 +541,15 @@ class TestTracerIntegration:
         assert 'i_consul.md' in identities
         assert 'i_pytest.md' in identities
 
-    def test_identity_names_none_omits_identity(self, tmp_path: Path):
+    def test_identity_names_none_omits_identity(self, tmp_path: Path, subprocess_cfg):
         """Without identity_names, agent begin spans have no identity detail."""
         from multi_agent.trace import TraceWriter
 
-        script = _make_event_script(
-            {'kind': 'assistant', 'text': 'hello'},
-        )
-        backend = FakeBackend(script)
+        cfg = subprocess_cfg({'kind': 'assistant', 'text': 'hello'})
         trace_path = tmp_path / 'trace.jsonl'
         tracing = TracingContext(writer=TraceWriter(trace_path), parent_span_id='test-phase')
 
-        launch_parallel_agents({'A': 'do A'}, _cfg(backend, tmp_path), tracing=tracing)
+        launch_parallel_agents({'A': 'do A'}, cfg, tracing=tracing)
 
         lines = trace_path.read_text().strip().splitlines()
         records = [json.loads(line) for line in lines]
@@ -579,13 +557,10 @@ class TestTracerIntegration:
         assert len(begins) == 1
         assert 'identity' not in begins[0]['details']
 
-    def test_no_tracing_no_trace_file(self, tmp_path: Path):
+    def test_no_tracing_no_trace_file(self, tmp_path: Path, subprocess_cfg):
         """When tracing is None, no trace file is created."""
-        script = _make_event_script(
-            {'kind': 'assistant', 'text': 'hello'},
-        )
-        backend = FakeBackend(script)
+        cfg = subprocess_cfg({'kind': 'assistant', 'text': 'hello'})
 
-        launch_parallel_agents({'A': 'do A'}, _cfg(backend, tmp_path))
+        launch_parallel_agents({'A': 'do A'}, cfg)
 
         assert not (tmp_path / 'trace.jsonl').exists()
