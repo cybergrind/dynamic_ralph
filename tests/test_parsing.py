@@ -5,8 +5,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from multi_agent.parsing import (
     ParseDiagnostic,
+    VoteOutput,
     _parse_concerns,
     _parse_list,
     parse_proposal,
@@ -264,6 +268,77 @@ class TestParseSectionsCodeFences:
 
 
 # ---------------------------------------------------------------------------
+# parse_sections — bold-text heading matching
+# ---------------------------------------------------------------------------
+
+
+class TestParseSectionsBoldHeadings:
+    """Tests for bold-text heading matching (e.g. **Winner** instead of ## Winner)."""
+
+    def test_bold_headings_matched(self) -> None:
+        text = '**Summary**\nHello world\n\n**Details**\nSome details here'
+        sections, diag = parse_sections(text, required=['Summary', 'Details'])
+        assert sections == {'Summary': 'Hello world', 'Details': 'Some details here'}
+        assert diag.parse_succeeded is True
+
+    def test_bold_headings_in_vote(self) -> None:
+        """Agents sometimes use **Winner** instead of ## Winner."""
+        text = (
+            '**Winner**\nE\n\n'
+            '**Decisive argument**\nStrong point about simplicity\n\n'
+            '**Concerns about the winner**\nE: Might be too simple'
+        )
+        result, diag = parse_vote(text, 'A', valid_proposals=['A', 'B', 'C', 'D', 'E'])
+        assert result is not None
+        assert result.winner == 'E'
+        assert diag.parse_succeeded is True
+
+    def test_bold_headings_seen_in_diagnostic(self) -> None:
+        text = '**Summary**\nHello\n\n**Unknown**\nStuff'
+        _, diag = parse_sections(text, required=['Summary'])
+        assert 'Summary' in diag.headings_seen
+        assert 'Unknown' in diag.headings_seen
+
+    def test_mixed_hash_and_bold_headings(self) -> None:
+        text = '## Summary\nHello\n\n**Details**\nWorld'
+        sections, diag = parse_sections(text, required=['Summary', 'Details'])
+        assert diag.parse_succeeded is True
+        assert sections['Summary'] == 'Hello'
+        assert sections['Details'] == 'World'
+
+    def test_inline_bold_heading_with_value(self) -> None:
+        """Agents often write **Winner:** A instead of a heading + body."""
+        text = (
+            '**Winner:** A (all three are identical)\n\n'
+            '**Decisive argument:** The Runtime Engineer\'s point.\n\n'
+            '**Concerns about the winner:** A: minor concern'
+        )
+        sections, diag = parse_sections(
+            text,
+            required=['Winner', 'Decisive argument', 'Concerns about the winner'],
+        )
+        assert diag.parse_succeeded is True
+        assert sections['Winner'] == 'A (all three are identical)'
+        assert "Runtime Engineer's point." in sections['Decisive argument']
+        assert 'A: minor concern' in sections['Concerns about the winner']
+
+    def test_inline_bold_heading_multiline_body(self) -> None:
+        """Inline value followed by continuation lines."""
+        text = (
+            '**Winner:** A\n\n'
+            '**Decisive argument:** First line.\n'
+            'Second line of argument.\n\n'
+            '**Concerns about the winner:** None'
+        )
+        sections, diag = parse_sections(
+            text,
+            required=['Winner', 'Decisive argument', 'Concerns about the winner'],
+        )
+        assert diag.parse_succeeded is True
+        assert 'Second line of argument.' in sections['Decisive argument']
+
+
+# ---------------------------------------------------------------------------
 # parse_vote
 # ---------------------------------------------------------------------------
 
@@ -374,6 +449,21 @@ class TestParseVote:
         assert result is not None
         assert result.winner == 'Z'
         assert diag.parse_succeeded is True
+
+    def test_bold_winner_stripped(self) -> None:
+        """'**E**' should normalize to 'E'."""
+        text = _make_vote_text(winner='**E**')
+        result, diag = parse_vote(text, 'A', valid_proposals=['A', 'B', 'C', 'D', 'E'])
+        assert result is not None
+        assert result.winner == 'E'
+        assert diag.parse_succeeded is True
+
+    def test_bold_proposal_prefix_winner_stripped(self) -> None:
+        """'**Proposal B**' should normalize to 'B'."""
+        text = _make_vote_text(winner='**Proposal B**')
+        result, _ = parse_vote(text, 'A')
+        assert result is not None
+        assert result.winner == 'B'
 
 
 # ---------------------------------------------------------------------------
@@ -571,3 +661,94 @@ class TestSummarizePhaseHealth:
     def test_empty_diagnostics(self) -> None:
         result = summarize_phase_health([])
         assert result == '0/0 parsed'
+
+
+# ---------------------------------------------------------------------------
+# VoteOutput Pydantic model
+# ---------------------------------------------------------------------------
+
+
+class TestVoteOutput:
+    """Tests for VoteOutput Pydantic model validators."""
+
+    def test_normalize_bold_double_star(self) -> None:
+        """'**E**' normalizes to 'E'."""
+        vo = VoteOutput(
+            winner='**E**',
+            decisive_argument='Strong point',
+            concerns_about_the_winner='E: minor issue',
+        )
+        assert vo.winner == 'E'
+
+    def test_normalize_bold_single_star(self) -> None:
+        """'*E*' normalizes to 'E'."""
+        vo = VoteOutput(
+            winner='*E*',
+            decisive_argument='Strong point',
+            concerns_about_the_winner='E: minor issue',
+        )
+        assert vo.winner == 'E'
+
+    def test_normalize_backtick(self) -> None:
+        """`E` normalizes to 'E'."""
+        vo = VoteOutput(
+            winner='`E`',
+            decisive_argument='Strong point',
+            concerns_about_the_winner='E: minor issue',
+        )
+        assert vo.winner == 'E'
+
+    def test_normalize_proposal_prefix(self) -> None:
+        """'Proposal B' normalizes to 'B'."""
+        vo = VoteOutput(
+            winner='Proposal B',
+            decisive_argument='Strong point',
+            concerns_about_the_winner='B: minor',
+        )
+        assert vo.winner == 'B'
+
+    def test_normalize_bold_proposal_prefix(self) -> None:
+        """'**Proposal B**' normalizes to 'B'."""
+        vo = VoteOutput(
+            winner='**Proposal B**',
+            decisive_argument='Strong point',
+            concerns_about_the_winner='B: minor',
+        )
+        assert vo.winner == 'B'
+
+    def test_normalize_lowercase(self) -> None:
+        """'e' normalizes to 'E'."""
+        vo = VoteOutput(
+            winner='e',
+            decisive_argument='Strong point',
+            concerns_about_the_winner='E: minor',
+        )
+        assert vo.winner == 'E'
+
+    def test_empty_winner_rejected(self) -> None:
+        """Empty winner raises ValidationError."""
+        with pytest.raises(ValidationError, match='winner'):
+            VoteOutput(
+                winner='',
+                decisive_argument='Strong point',
+                concerns_about_the_winner='A: minor',
+            )
+
+    def test_whitespace_only_winner_rejected(self) -> None:
+        """Whitespace-only winner raises ValidationError."""
+        with pytest.raises(ValidationError, match='winner'):
+            VoteOutput(
+                winner='   ',
+                decisive_argument='Strong point',
+                concerns_about_the_winner='A: minor',
+            )
+
+    def test_defaults_for_optional_fields(self) -> None:
+        """Optional fields default to empty strings."""
+        vo = VoteOutput(
+            winner='A',
+            decisive_argument='Strong point',
+            concerns_about_the_winner='A: minor',
+        )
+        assert vo.unrefuted_arguments == ''
+        assert vo.merge_suggestion == ''

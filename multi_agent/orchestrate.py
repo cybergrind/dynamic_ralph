@@ -11,6 +11,7 @@ import json
 import logging
 import random
 import string
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -25,9 +26,14 @@ from multi_agent.codex_prompts import (
     load_codex,
     load_identity,
 )
+from multi_agent.extract import ExtractionResult, extract
 from multi_agent.parallel import launch_parallel_agents
 from multi_agent.parsing import (
+    ParseDiagnostic,
+    VoteOutput,
     VoteResult,
+    _parse_concerns,
+    _parse_list,
     parse_proposal,
     parse_vote,
     summarize_phase_health,
@@ -56,6 +62,30 @@ DEBATE_MAX_TURNS = 5
 VOTE_TIMEOUT = 300
 VOTE_MAX_TURNS = 3
 QUORUM_MIN = 3
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _extraction_to_diagnostic(
+    extraction: ExtractionResult,
+    agent_label: str,
+    phase: str,
+) -> ParseDiagnostic:
+    """Convert an ExtractionResult into a ParseDiagnostic for phase health reporting."""
+    last = extraction.attempts[-1] if extraction.attempts else None
+    return ParseDiagnostic(
+        agent_label=agent_label,
+        phase=phase,
+        sections_found=[],
+        sections_missing=last.errors if last and not last.succeeded else [],
+        headings_seen=[],
+        raw_text=last.raw_text if last else '',
+        parse_succeeded=extraction.succeeded,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Validation
@@ -200,6 +230,11 @@ def _load_round_votes(round_dir: Path, valid_proposals: list[str]) -> dict[str, 
 # ---------------------------------------------------------------------------
 
 
+def _agent_succeeded(result: AgentResult) -> bool:
+    """Return True if the agent produced a usable response."""
+    return result.exit_code == 0 and not result.timed_out and bool(result.full_response.strip())
+
+
 def _enforce_quorum(
     results: dict[str, AgentResult],
     prompts: dict[str, str],
@@ -211,9 +246,20 @@ def _enforce_quorum(
     log_prefix: str = '',
 ) -> dict[str, AgentResult]:
     """Retry failed agents once. Raise RuntimeError if still below QUORUM_MIN."""
-    failed = {label: prompts[label] for label, r in results.items() if r.exit_code != 0 or r.timed_out}
+    failed = {label: prompts[label] for label, r in results.items() if not _agent_succeeded(r)}
 
     if not failed:
+        return results
+
+    succeeded = sum(1 for r in results.values() if _agent_succeeded(r))
+    if succeeded >= QUORUM_MIN:
+        log.info(
+            'Quorum already met (%d/%d succeeded), skipping retry of %d failed agents: %s',
+            succeeded,
+            len(results),
+            len(failed),
+            list(failed.keys()),
+        )
         return results
 
     log.info('Retrying %d failed agents: %s', len(failed), list(failed.keys()))
@@ -228,10 +274,10 @@ def _enforce_quorum(
 
     merged = dict(results)
     for label, result in retry_results.items():
-        if result.exit_code == 0 and not result.timed_out:
+        if _agent_succeeded(result):
             merged[label] = result
 
-    succeeded = sum(1 for r in merged.values() if r.exit_code == 0 and not r.timed_out)
+    succeeded = sum(1 for r in merged.values() if _agent_succeeded(r))
     if succeeded < QUORUM_MIN:
         msg = f'Quorum not met: {succeeded}/{len(merged)} agents succeeded (need {QUORUM_MIN})'
         raise RuntimeError(msg)
@@ -435,20 +481,62 @@ def run_vote(
     votes_dir = round_dir / 'votes'
     votes_dir.mkdir(parents=True, exist_ok=True)
 
+    def _make_invoke(label: str) -> Callable[[str], AgentResult]:
+        """Closure that re-runs a single agent for extract retry."""
+
+        def _invoke(correction_prompt: str) -> AgentResult:
+            retry = launch_parallel_agents(
+                {label: correction_prompt},
+                backend=backend,
+                max_turns=VOTE_MAX_TURNS,
+                timeout=VOTE_TIMEOUT,
+                log_dir=log_dir,
+                log_prefix=f'{phase_prefix}retry-{label}-',
+            )
+            return retry[label]
+
+        return _invoke
+
     votes: dict[str, VoteResult] = {}
     diagnostics = []
     for label in sorted(results.keys()):
         result = results[label]
         text = result.full_response
-        vote, diag = parse_vote(text, agent_label=label, valid_proposals=valid_proposals)
-        diagnostics.append(diag)
 
-        if vote is not None:
-            votes[label] = vote
+        extraction = extract(
+            text,
+            VoteOutput,
+            prompt=prompts[label],
+            invoke=_make_invoke(label),
+            max_attempts=2,
+        )
+
+        if extraction.succeeded:
+            vo = extraction.value
+            assert vo is not None  # guaranteed by succeeded
+            if valid_proposals and vo.winner not in valid_proposals:
+                log.warning('Agent %s voted for unknown proposal %s', label, vo.winner)
+            else:
+                votes[label] = VoteResult(
+                    voter_label=label,
+                    winner=vo.winner,
+                    decisive_argument=vo.decisive_argument,
+                    concerns=_parse_concerns(vo.concerns_about_the_winner),
+                    unrefuted_arguments=_parse_list(vo.unrefuted_arguments),
+                    merge_suggestion=vo.merge_suggestion or None,
+                )
         else:
-            log.warning('Agent %s vote parse failed: %s', label, diag.sections_missing)
+            last = extraction.attempts[-1] if extraction.attempts else None
+            errors = last.errors if last else ['no attempts']
+            log.warning('Agent %s vote extraction failed: %s', label, errors)
 
-        (votes_dir / f'agent-{label}.md').write_text(text)
+        # Write final text (possibly from retry attempt)
+        final_text = extraction.attempts[-1].raw_text if extraction.attempts else text
+        (votes_dir / f'agent-{label}.md').write_text(final_text)
+
+        # Build diagnostic for phase health reporting
+        diag = _extraction_to_diagnostic(extraction, label, 'vote')
+        diagnostics.append(diag)
 
     write_phase_diagnostics(diagnostics, 'vote', round_dir)
     log.info('Vote: %s', summarize_phase_health(diagnostics))

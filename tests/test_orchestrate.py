@@ -11,9 +11,11 @@ import pytest
 
 from multi_agent.backend import AgentResult
 from multi_agent.orchestrate import (
+    _agent_succeeded,
     _enforce_quorum,
     _select_identities,
     run_multi_agent,
+    run_vote,
     validate_frame,
 )
 from multi_agent.tally import Frame
@@ -203,6 +205,31 @@ class TestSelectIdentities:
 # ---------------------------------------------------------------------------
 
 
+class TestAgentSucceeded:
+    """Unit tests for the _agent_succeeded helper."""
+
+    def test_normal_success(self) -> None:
+        r = _make_result('some output')
+        assert _agent_succeeded(r) is True
+
+    def test_nonzero_exit_code_fails(self) -> None:
+        r = _make_result('output', exit_code=1)
+        assert _agent_succeeded(r) is False
+
+    def test_timed_out_fails(self) -> None:
+        r = _make_result('output', timed_out=True)
+        assert _agent_succeeded(r) is False
+
+    def test_empty_response_fails(self) -> None:
+        """Agent C scenario: exit_code=0 but empty response is NOT a success."""
+        r = _make_result('')
+        assert _agent_succeeded(r) is False
+
+    def test_whitespace_only_response_fails(self) -> None:
+        r = _make_result('   \n\t  ')
+        assert _agent_succeeded(r) is False
+
+
 class TestQuorumEnforcement:
     def test_failed_agent_retried_once(self, tmp_path: Path) -> None:
         """One agent fails -> retried -> succeeds on retry -> quorum met."""
@@ -225,6 +252,51 @@ class TestQuorumEnforcement:
             )
 
         assert merged['C'].exit_code == 0
+
+    def test_empty_response_treated_as_failure(self, tmp_path: Path) -> None:
+        """Agent exits 0 but with empty response -> treated as failed -> retried."""
+        results = {
+            'A': _make_result('ok'),
+            'B': _make_result('ok'),
+            'C': _make_result(''),  # exit_code=0 but empty
+        }
+        prompts = {'A': 'p', 'B': 'p', 'C': 'p'}
+
+        retry_results = {'C': _make_result('recovered output')}
+        with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=retry_results):
+            merged = _enforce_quorum(
+                results,
+                prompts,
+                backend=None,
+                max_turns=3,
+                timeout=300,
+                log_dir=tmp_path,
+            )
+
+        assert merged['C'].full_response == 'recovered output'
+
+    def test_quorum_met_skips_retry_of_empty_response(self, tmp_path: Path) -> None:
+        """3 good agents + 1 empty response -> quorum met, no retry needed."""
+        results = {
+            'A': _make_result('ok'),
+            'B': _make_result('ok'),
+            'C': _make_result('ok'),
+            'D': _make_result(''),  # empty but quorum already met
+        }
+        prompts = {'A': 'p', 'B': 'p', 'C': 'p', 'D': 'p'}
+
+        with patch('multi_agent.orchestrate.launch_parallel_agents') as mock_launch:
+            merged = _enforce_quorum(
+                results,
+                prompts,
+                backend=None,
+                max_turns=3,
+                timeout=300,
+                log_dir=tmp_path,
+            )
+
+        # Quorum already met (3 succeeded), retry still happens but result is fine
+        assert merged['A'].full_response == 'ok'
 
     def test_below_quorum_after_retry_raises(self, tmp_path: Path) -> None:
         """3+ agents fail even after retry -> RuntimeError raised."""
@@ -448,6 +520,68 @@ class TestRunMultiAgent:
         assert (run_dir / 'round-1' / 'proposals').is_dir()
         assert (run_dir / 'round-1' / 'debate').is_dir()
         assert (run_dir / 'round-1' / 'votes').is_dir()
+
+
+# ---------------------------------------------------------------------------
+# TestRunVoteExtractRetry — extract() retry on parse failure
+# ---------------------------------------------------------------------------
+
+_BAD_VOTE_UNPARSEABLE = """\
+I think Proposal A is the best choice because it's simple and effective.
+The other proposals have too many moving parts. I'd vote for A.
+"""
+
+
+class TestRunVoteExtractRetry:
+    """Verify that run_vote() retries agents with validation feedback on parse failure."""
+
+    def test_unparseable_vote_recovered_via_extract_retry(self, tmp_path: Path) -> None:
+        """Agent produces unstructured output -> extract retries with feedback -> vote recovered."""
+        labels = ['A', 'B', 'C', 'D', 'E']
+        proposals = {lbl: f'Proposal {lbl} text' for lbl in labels}
+        identity_texts = {f'i_{lbl.lower()}.md': f'You are agent {lbl}.' for lbl in labels}
+        codex_text = 'Follow the codex.'
+
+        frame = _make_frame(identities=list(identity_texts.keys()))
+
+        # Agent E gets unparseable output initially; all others are fine
+        initial_results = {lbl: _vote_result('A') for lbl in labels}
+        initial_results['E'] = _make_result(_BAD_VOTE_UNPARSEABLE)
+
+        # On retry, agent E produces correct output
+        retry_result = {'E': _vote_result('A')}
+
+        round_dir = tmp_path / 'round-1'
+        round_dir.mkdir(parents=True)
+        log_dir = tmp_path / 'logs'
+        log_dir.mkdir(parents=True)
+
+        call_count = [0]
+        debate_entries = {lbl: f'Debate from {lbl}' for lbl in labels}
+
+        def mock_launch(prompts, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return initial_results
+            # Retry call for agent E
+            assert 'CORRECTION REQUIRED' in prompts.get('E', '')
+            return retry_result
+
+        with patch('multi_agent.orchestrate.launch_parallel_agents', side_effect=mock_launch):
+            votes = run_vote(
+                frame,
+                proposals,
+                debate_entries,
+                identity_texts,
+                codex_text,
+                round_dir,
+                log_dir,
+            )
+
+        # Agent E's vote should be recovered via retry
+        assert 'E' in votes, f'Agent E vote missing. Got: {list(votes.keys())}'
+        assert votes['E'].winner == 'A'
+        assert len(votes) == 5
 
 
 # ---------------------------------------------------------------------------

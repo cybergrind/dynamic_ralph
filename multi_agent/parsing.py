@@ -21,6 +21,8 @@ import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from pydantic import BaseModel, Field, field_validator
+
 
 # ---------------------------------------------------------------------------
 # Data models
@@ -59,10 +61,45 @@ class VoteResult:
 
 
 # ---------------------------------------------------------------------------
-# Core parser
+# Pydantic output models
 # ---------------------------------------------------------------------------
 
+_MARKDOWN_STRIP_RE = re.compile(r'^[\*_`]+(.+?)[\*_`]+$')
 _PROPOSAL_PREFIX_RE = re.compile(r'^proposal\s+', re.IGNORECASE)
+
+
+class VoteOutput(BaseModel):
+    """Pydantic model for validated vote extraction.
+
+    Field names map to markdown headings via the default extractor in
+    ``multi_agent.extract``: ``decisive_argument`` → ``Decisive argument``.
+    """
+
+    winner: str
+    decisive_argument: str
+    concerns_about_the_winner: str  # raw text, parsed to dict by caller
+    unrefuted_arguments: str = Field(default='')
+    merge_suggestion: str = Field(default='')
+
+    @field_validator('winner', mode='before')
+    @classmethod
+    def normalize_winner(cls, v: str) -> str:
+        """Strip markdown formatting, 'Proposal ' prefix, and uppercase."""
+        v = _MARKDOWN_STRIP_RE.sub(r'\1', v.strip()).strip()
+        v = _PROPOSAL_PREFIX_RE.sub('', v).strip()
+        return v.upper()
+
+    @field_validator('winner')
+    @classmethod
+    def winner_not_empty(cls, v: str) -> str:
+        if not v:
+            raise ValueError('winner must not be empty')
+        return v
+
+
+# ---------------------------------------------------------------------------
+# Core parser
+# ---------------------------------------------------------------------------
 
 
 def parse_sections(
@@ -112,15 +149,25 @@ def parse_sections(
         heading_text = line.lstrip('#').strip()
         key = heading_text.lower()
 
+        # Also detect bold-text headings: lines like "**Winner**" or
+        # inline "**Winner:** some value".  The regex captures the heading
+        # name and optional trailing text after the closing **.
+        bold_match = re.match(r'^\s*\*\*(.+?)\*\*:?\s*(.*)', line)
+        inline_value = ''
+        if bold_match and not line.lstrip().startswith('#'):
+            heading_text = bold_match.group(1).rstrip(':').strip()
+            key = heading_text.lower()
+            inline_value = bold_match.group(2).strip()
+
         # Record every heading we encounter (for headings_seen diagnostic)
-        if line.lstrip().startswith('#') and heading_text:
+        if (line.lstrip().startswith('#') or bold_match) and heading_text:
             headings_seen.append(heading_text)
 
         if key in expected:
             if current_section is not None:
                 sections[current_section] = '\n'.join(current_lines).strip()
             current_section = expected[key]
-            current_lines = []
+            current_lines = [inline_value] if inline_value else []
         elif current_section is not None:
             current_lines.append(line)
 
@@ -225,7 +272,9 @@ def parse_vote(
         return None, diag
 
     # Normalize winner: "Proposal B" -> "B", "proposal b" -> "B", "B" -> "B"
+    # Also strip markdown bold: "**E**" -> "E"
     raw_winner = sections['Winner'].strip()
+    raw_winner = re.sub(r'^\*{1,2}(.+?)\*{1,2}$', r'\1', raw_winner).strip()
     normalized = _PROPOSAL_PREFIX_RE.sub('', raw_winner).strip().upper()
 
     if valid_proposals is not None and normalized not in valid_proposals:

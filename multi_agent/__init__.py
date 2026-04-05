@@ -28,12 +28,14 @@ from multi_agent.constants import (
     get_git_author_identity,
 )
 from multi_agent.docker import build_image, docker_sock_gid, image_exists
+from multi_agent.extract import Attempt, ExtractionResult, extract
 from multi_agent.filelock import FileLock, FileLockTimeout
 from multi_agent.models import FlatStory, Prd, UserStory, parse_prd
 from multi_agent.orchestrate import run_multi_agent, validate_frame
 from multi_agent.parallel import launch_parallel_agents
 from multi_agent.parsing import (
     ParseDiagnostic,
+    VoteOutput,
     VoteResult,
     parse_proposal,
     parse_sections,
@@ -72,7 +74,9 @@ __all__ = [
     'AgentBackend',
     'AgentEvent',
     'AgentResult',
+    'Attempt',
     'DecisionRecord',
+    'ExtractionResult',
     'FileLock',
     'FileLockTimeout',
     'FlatStory',
@@ -81,6 +85,7 @@ __all__ = [
     'Prd',
     'Tally',
     'UserStory',
+    'VoteOutput',
     'VoteResult',
     'build_debate_prompt',
     'build_decision',
@@ -99,6 +104,7 @@ __all__ = [
     'display_agent_event',
     'display_event',
     'docker_sock_gid',
+    'extract',
     'find_next_story',
     'get_backend',
     'get_git_author_identity',
