@@ -990,14 +990,17 @@ class TestCLIHelp:
         assert '/multi-agent' in result.stdout
         assert 'Usage:' in result.stdout
 
-    def test_help_argument_case_insensitive(self) -> None:
-        result = subprocess.run(
-            [sys.executable, str(ORCHESTRATE_SCRIPT), 'HELP'],
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0
-        assert '/multi-agent' in result.stdout
+    def test_help_argument_case_insensitive(self, capsys, monkeypatch) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location('orchestrate', ORCHESTRATE_SCRIPT)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        monkeypatch.setattr('sys.argv', ['orchestrate', 'HELP'])
+        mod.main()
+        captured = capsys.readouterr()
+        assert '/multi-agent' in captured.out
 
 
 # ---------------------------------------------------------------------------

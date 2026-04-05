@@ -130,7 +130,7 @@ class TestSubprocessWatchdog:
             stderr=subprocess.PIPE,
         )
         try:
-            wd = _SubprocessWatchdog(proc, timeout=0.5)
+            wd = _SubprocessWatchdog(proc, timeout=0.05)
             wd.start()
             # Wait for the watchdog to fire
             proc.wait(timeout=5)
@@ -189,7 +189,7 @@ class TestSubprocessWatchdog:
             stderr=subprocess.PIPE,
         )
         try:
-            wd = _SubprocessWatchdog(proc, timeout=0.5, grace_period=0.5)
+            wd = _SubprocessWatchdog(proc, timeout=0.05, grace_period=0.05)
             wd.start()
             proc.wait(timeout=5)
             assert wd.fired is True
@@ -294,7 +294,7 @@ class TestLaunchParallelAgents:
         backend = FakeBackend(script)
         prompts = {'hang-agent': 'do something'}
 
-        results = launch_parallel_agents(prompts, backend=backend, log_dir=tmp_path, timeout=0.5)
+        results = launch_parallel_agents(prompts, backend=backend, log_dir=tmp_path, timeout=0.05)
 
         assert 'hang-agent' in results
         result = results['hang-agent']

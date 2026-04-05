@@ -1063,7 +1063,7 @@ class TestFileLock:
         ready.wait(timeout=5)
         try:
             with pytest.raises(FileLockTimeout):
-                with FileLock(lock_path, timeout=1):
+                with FileLock(lock_path, timeout=0.1, poll_interval=0.01):
                     pass
         finally:
             release.set()

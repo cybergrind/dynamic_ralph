@@ -5,12 +5,16 @@ from __future__ import annotations
 import subprocess
 import tarfile
 import zipfile
+from functools import lru_cache
 from pathlib import Path
+
+import pytest
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
+@lru_cache(maxsize=1)
 def _wheel_path() -> Path:
     """Build and return path to the wheel."""
     result = subprocess.run(
@@ -30,6 +34,7 @@ def _wheel_path() -> Path:
     return wheels[0]
 
 
+@lru_cache(maxsize=1)
 def _sdist_path() -> Path:
     """Build and return path to the sdist."""
     subprocess.run(
@@ -45,13 +50,15 @@ def _sdist_path() -> Path:
     return sdists[0]
 
 
-def _wheel_files() -> set[str]:
+@pytest.fixture(scope='module')
+def wheel_files() -> set[str]:
     whl = _wheel_path()
     with zipfile.ZipFile(whl) as zf:
         return set(zf.namelist())
 
 
-def _sdist_files() -> set[str]:
+@pytest.fixture(scope='module')
+def sdist_files() -> set[str]:
     sdist = _sdist_path()
     with tarfile.open(sdist) as tf:
         return {m.name for m in tf.getmembers()}
@@ -100,26 +107,23 @@ class TestWheelContents:
         '__pycache__/',
     ]
 
-    def test_required_files_present(self):
-        files = _wheel_files()
-        missing = [f for f in self.REQUIRED_IN_WHEEL if f not in files]
+    def test_required_files_present(self, wheel_files):
+        missing = [f for f in self.REQUIRED_IN_WHEEL if f not in wheel_files]
         assert not missing, 'Missing from wheel:\n' + '\n'.join(missing)
 
-    def test_forbidden_patterns_absent(self):
-        files = _wheel_files()
+    def test_forbidden_patterns_absent(self, wheel_files):
         violations = []
-        for f in files:
+        for f in wheel_files:
             for pat in self.FORBIDDEN_PATTERNS_IN_WHEEL:
                 if pat in f:
                     violations.append(f)
                     break
         assert not violations, 'Unwanted files in wheel:\n' + '\n'.join(violations)
 
-    def test_identities_complete(self):
+    def test_identities_complete(self, wheel_files):
         """All identity files from docs/identities/ must be in the wheel."""
         source_identities = {p.name for p in (PROJECT_ROOT / 'docs' / 'identities').glob('*.md')}
-        files = _wheel_files()
-        wheel_identities = {f.split('/')[-1] for f in files if f.startswith('multi_agent/_data/docs/identities/')}
+        wheel_identities = {f.split('/')[-1] for f in wheel_files if f.startswith('multi_agent/_data/docs/identities/')}
         missing = source_identities - wheel_identities
         assert not missing, f'Identity files missing from wheel: {missing}'
 
@@ -138,19 +142,18 @@ class TestSdistContents:
         '__pycache__/',
     ]
 
-    def test_forbidden_patterns_absent(self):
-        files = _sdist_files()
+    def test_forbidden_patterns_absent(self, sdist_files):
         violations = []
-        for f in files:
+        for f in sdist_files:
             for pat in self.FORBIDDEN_PATTERNS_IN_SDIST:
                 if pat in f:
                     violations.append(f)
                     break
         assert not violations, 'Unwanted files in sdist:\n' + '\n'.join(violations)
 
-    def test_source_files_present(self):
+    def test_source_files_present(self, sdist_files):
         """Sdist should include Python source and key project files."""
-        files = _sdist_files()
+        files = sdist_files
         # Check for a few key files (paths are prefixed with package-version/)
         has_init = any('multi_agent/__init__.py' in f for f in files)
         has_pyproject = any('pyproject.toml' in f for f in files)

@@ -15,11 +15,13 @@ class FileLock:
         path: Path to the lock file.
         timeout: Maximum seconds to wait for the lock. ``None`` means block
             indefinitely (the default for backward compatibility).
+        poll_interval: Seconds between lock-acquisition retries (default 0.1).
     """
 
-    def __init__(self, path: str, timeout: int | None = None):
+    def __init__(self, path: str, timeout: int | None = None, *, poll_interval: float = 0.1):
         self.path = path
         self.timeout = timeout
+        self._poll_interval = poll_interval
         self.fd = None
 
     def __enter__(self):
@@ -34,7 +36,7 @@ class FileLock:
                     if time.monotonic() >= deadline:
                         self.fd.close()
                         raise FileLockTimeout(f'Could not acquire lock on {self.path} within {self.timeout}s')
-                    time.sleep(0.1)
+                    time.sleep(self._poll_interval)
         else:
             fcntl.lockf(self.fd, fcntl.LOCK_EX)
         return self
