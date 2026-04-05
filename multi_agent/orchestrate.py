@@ -339,7 +339,6 @@ def _enforce_quorum(
 
 
 def run_propose(
-    frame: Frame,
     identity_texts: dict[str, str],
     codex_text: str,
     frame_text: str,
@@ -453,7 +452,6 @@ def run_propose(
 
 
 def run_debate(
-    frame: Frame,
     proposals: dict[str, str],
     identity_texts: dict[str, str],
     codex_text: str,
@@ -548,7 +546,6 @@ def run_debate(
 
 
 def run_vote(
-    frame: Frame,
     proposals: dict[str, str],
     debate_entries: dict[str, str],
     identity_texts: dict[str, str],
@@ -859,7 +856,6 @@ def run_multi_agent(
             else:
                 _update_metadata(meta_path, current_round=round_num, current_phase='propose')
                 proposals = run_propose(
-                    frame,
                     identity_texts,
                     codex_text,
                     frame_text,
@@ -878,7 +874,6 @@ def run_multi_agent(
             else:
                 _update_metadata(meta_path, current_phase='debate')
                 debate_entries = run_debate(
-                    frame,
                     proposals,
                     identity_texts,
                     codex_text,
@@ -898,7 +893,6 @@ def run_multi_agent(
             else:
                 _update_metadata(meta_path, current_phase='vote')
                 votes = run_vote(
-                    frame,
                     proposals,
                     debate_entries,
                     identity_texts,

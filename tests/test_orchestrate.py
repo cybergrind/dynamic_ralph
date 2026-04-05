@@ -565,8 +565,6 @@ class TestRunVoteExtractRetry:
         identity_texts = {f'i_{lbl.lower()}.md': f'You are agent {lbl}.' for lbl in labels}
         codex_text = 'Follow the codex.'
 
-        frame = _make_frame(identities=list(identity_texts.keys()))
-
         # Agent E gets unparseable output initially; all others are fine
         initial_results = {lbl: _vote_result('A') for lbl in labels}
         initial_results['E'] = _make_result(_BAD_VOTE_UNPARSEABLE)
@@ -592,7 +590,6 @@ class TestRunVoteExtractRetry:
 
         with patch('multi_agent.orchestrate.launch_parallel_agents', side_effect=mock_launch):
             votes = run_vote(
-                frame,
                 proposals,
                 debate_entries,
                 identity_texts,
@@ -619,23 +616,21 @@ class TestRunVoteStructuredOutput:
         labels = ['A', 'B', 'C', 'D', 'E']
         proposals = {lbl: f'Proposal {lbl} text' for lbl in labels}
         identity_texts = {f'i_{lbl.lower()}.md': f'You are agent {lbl}.' for lbl in labels}
-        frame = _make_frame(identities=list(identity_texts.keys()))
         debate_entries = {lbl: f'Debate from {lbl}' for lbl in labels}
         round_dir = tmp_path / 'round-1'
         round_dir.mkdir(parents=True)
         log_dir = tmp_path / 'logs'
         log_dir.mkdir(parents=True)
-        return labels, proposals, identity_texts, frame, debate_entries, round_dir, log_dir
+        return labels, proposals, identity_texts, debate_entries, round_dir, log_dir
 
     def test_run_vote_passes_output_schema(self, tmp_path: Path) -> None:
         """run_vote passes VoteOutput JSON schema to launch_parallel_agents."""
-        labels, proposals, identity_texts, frame, debate_entries, round_dir, log_dir = self._setup(tmp_path)
+        labels, proposals, identity_texts, debate_entries, round_dir, log_dir = self._setup(tmp_path)
 
         initial_results = {lbl: _vote_result('A') for lbl in labels}
 
         with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=initial_results) as mock:
             run_vote(
-                frame,
                 proposals,
                 debate_entries,
                 identity_texts,
@@ -654,7 +649,7 @@ class TestRunVoteStructuredOutput:
 
     def test_run_vote_reads_structured_output(self, tmp_path: Path) -> None:
         """Agents with structured_output are parsed correctly even if full_response is garbage."""
-        labels, proposals, identity_texts, frame, debate_entries, round_dir, log_dir = self._setup(tmp_path)
+        labels, proposals, identity_texts, debate_entries, round_dir, log_dir = self._setup(tmp_path)
 
         structured = {
             'winner': 'A',
@@ -672,7 +667,6 @@ class TestRunVoteStructuredOutput:
 
         with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=initial_results):
             votes = run_vote(
-                frame,
                 proposals,
                 debate_entries,
                 identity_texts,
@@ -686,14 +680,13 @@ class TestRunVoteStructuredOutput:
 
     def test_run_vote_fallback_without_structured_output(self, tmp_path: Path) -> None:
         """structured_output=None falls back to markdown extraction."""
-        labels, proposals, identity_texts, frame, debate_entries, round_dir, log_dir = self._setup(tmp_path)
+        labels, proposals, identity_texts, debate_entries, round_dir, log_dir = self._setup(tmp_path)
 
         # No structured_output, but parseable markdown
         initial_results = {lbl: _vote_result('A') for lbl in labels}
 
         with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=initial_results):
             votes = run_vote(
-                frame,
                 proposals,
                 debate_entries,
                 identity_texts,
@@ -707,7 +700,7 @@ class TestRunVoteStructuredOutput:
 
     def test_run_vote_structured_output_invalid_winner_skipped(self, tmp_path: Path) -> None:
         """structured_output with unknown proposal label -> vote skipped."""
-        labels, proposals, identity_texts, frame, debate_entries, round_dir, log_dir = self._setup(tmp_path)
+        labels, proposals, identity_texts, debate_entries, round_dir, log_dir = self._setup(tmp_path)
 
         initial_results = {}
         for lbl in labels:
@@ -721,7 +714,6 @@ class TestRunVoteStructuredOutput:
 
         with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=initial_results):
             votes = run_vote(
-                frame,
                 proposals,
                 debate_entries,
                 identity_texts,
@@ -734,7 +726,7 @@ class TestRunVoteStructuredOutput:
 
     def test_run_vote_quorum_warning(self, tmp_path: Path, caplog) -> None:
         """All agents fail to produce valid votes -> warning logged."""
-        labels, proposals, identity_texts, frame, debate_entries, round_dir, log_dir = self._setup(tmp_path)
+        labels, proposals, identity_texts, debate_entries, round_dir, log_dir = self._setup(tmp_path)
 
         # All agents return unparseable garbage with no structured_output
         initial_results = {lbl: _make_result('random garbage') for lbl in labels}
@@ -744,7 +736,6 @@ class TestRunVoteStructuredOutput:
         with caplog.at_level(logging.WARNING):
             with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=initial_results):
                 votes = run_vote(
-                    frame,
                     proposals,
                     debate_entries,
                     identity_texts,
@@ -768,21 +759,19 @@ class TestRunProposeStructuredOutput:
     def _setup(self, tmp_path):
         labels = ['A', 'B', 'C', 'D', 'E']
         identity_texts = {f'i_{lbl.lower()}.md': f'You are agent {lbl}.' for lbl in labels}
-        frame = _make_frame(identities=list(identity_texts.keys()))
         round_dir = tmp_path / 'round-1'
         round_dir.mkdir(parents=True)
         log_dir = tmp_path / 'logs'
         log_dir.mkdir(parents=True)
-        return labels, identity_texts, frame, round_dir, log_dir
+        return labels, identity_texts, round_dir, log_dir
 
     def test_run_propose_passes_output_schema(self, tmp_path: Path) -> None:
         """run_propose passes ProposalOutput JSON schema to launch_parallel_agents."""
-        labels, identity_texts, frame, round_dir, log_dir = self._setup(tmp_path)
+        labels, identity_texts, round_dir, log_dir = self._setup(tmp_path)
         initial_results = {lbl: _proposal_result(lbl) for lbl in labels}
 
         with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=initial_results) as mock:
             run_propose(
-                frame,
                 identity_texts,
                 'codex',
                 'frame text',
@@ -799,7 +788,7 @@ class TestRunProposeStructuredOutput:
 
     def test_run_propose_reads_structured_output(self, tmp_path: Path) -> None:
         """Structured output → to_markdown() → proposals dict has formatted markdown."""
-        labels, identity_texts, frame, round_dir, log_dir = self._setup(tmp_path)
+        labels, identity_texts, round_dir, log_dir = self._setup(tmp_path)
 
         structured = {
             'summary': 'Build a cache',
@@ -818,7 +807,6 @@ class TestRunProposeStructuredOutput:
 
         with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=initial_results):
             proposals = run_propose(
-                frame,
                 identity_texts,
                 'codex',
                 'frame text',
@@ -836,12 +824,11 @@ class TestRunProposeStructuredOutput:
 
     def test_run_propose_fallback_to_raw_text(self, tmp_path: Path) -> None:
         """No structured_output → raw text used (backward compat)."""
-        labels, identity_texts, frame, round_dir, log_dir = self._setup(tmp_path)
+        labels, identity_texts, round_dir, log_dir = self._setup(tmp_path)
         initial_results = {lbl: _proposal_result(lbl) for lbl in labels}
 
         with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=initial_results):
             proposals = run_propose(
-                frame,
                 identity_texts,
                 'codex',
                 'frame text',
@@ -868,21 +855,19 @@ class TestRunDebateStructuredOutput:
         labels = ['A', 'B', 'C', 'D', 'E']
         proposals = {lbl: f'Proposal {lbl} text' for lbl in labels}
         identity_texts = {f'i_{lbl.lower()}.md': f'You are agent {lbl}.' for lbl in labels}
-        frame = _make_frame(identities=list(identity_texts.keys()))
         round_dir = tmp_path / 'round-1'
         round_dir.mkdir(parents=True)
         log_dir = tmp_path / 'logs'
         log_dir.mkdir(parents=True)
-        return labels, proposals, identity_texts, frame, round_dir, log_dir
+        return labels, proposals, identity_texts, round_dir, log_dir
 
     def test_run_debate_passes_output_schema(self, tmp_path: Path) -> None:
         """run_debate passes DebateOutput JSON schema to launch_parallel_agents."""
-        labels, proposals, identity_texts, frame, round_dir, log_dir = self._setup(tmp_path)
+        labels, proposals, identity_texts, round_dir, log_dir = self._setup(tmp_path)
         initial_results = {lbl: _debate_result(lbl) for lbl in labels}
 
         with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=initial_results) as mock:
             run_debate(
-                frame,
                 proposals,
                 identity_texts,
                 'codex',
@@ -900,7 +885,7 @@ class TestRunDebateStructuredOutput:
 
     def test_run_debate_reads_structured_output(self, tmp_path: Path) -> None:
         """Structured output → to_markdown() → debate_entries has formatted markdown."""
-        labels, proposals, identity_texts, frame, round_dir, log_dir = self._setup(tmp_path)
+        labels, proposals, identity_texts, round_dir, log_dir = self._setup(tmp_path)
 
         structured = {
             'my_case': 'Proposal A is strongest',
@@ -917,7 +902,6 @@ class TestRunDebateStructuredOutput:
 
         with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=initial_results):
             debate_entries = run_debate(
-                frame,
                 proposals,
                 identity_texts,
                 'codex',
@@ -935,12 +919,11 @@ class TestRunDebateStructuredOutput:
 
     def test_run_debate_fallback_to_raw_text(self, tmp_path: Path) -> None:
         """No structured_output → raw text used."""
-        labels, proposals, identity_texts, frame, round_dir, log_dir = self._setup(tmp_path)
+        labels, proposals, identity_texts, round_dir, log_dir = self._setup(tmp_path)
         initial_results = {lbl: _debate_result(lbl) for lbl in labels}
 
         with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=initial_results):
             debate_entries = run_debate(
-                frame,
                 proposals,
                 identity_texts,
                 'codex',
