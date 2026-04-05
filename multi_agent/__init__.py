@@ -55,6 +55,7 @@ from multi_agent.tally import (
     compute_tally,
     detect_veto,
 )
+from multi_agent.trace import TraceSpan, TraceWriter, format_trace_report
 
 
 __all__ = [
@@ -85,6 +86,8 @@ __all__ = [
     'PhaseConfig',
     'Prd',
     'Tally',
+    'TraceSpan',
+    'TraceWriter',
     'UserStory',
     'VoteOutput',
     'VoteResult',
@@ -107,6 +110,7 @@ __all__ = [
     'docker_sock_gid',
     'extract',
     'find_next_story',
+    'format_trace_report',
     'get_backend',
     'get_git_author_identity',
     'image_exists',

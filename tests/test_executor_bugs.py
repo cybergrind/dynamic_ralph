@@ -93,7 +93,7 @@ class TestGitResetHard:
 
     @patch('multi_agent.workflow.executor._is_git_worktree', return_value=True)
     @patch('multi_agent.workflow.executor.subprocess.run')
-    def test_calls_reset_and_clean_on_valid_sha(self, mock_run, _mock_wt):
+    def test_calls_reset_and_clean_on_valid_sha(self, mock_run, mock_wt):
         from multi_agent.workflow.executor import _git_reset_hard
 
         _git_reset_hard('abc123')
@@ -103,7 +103,7 @@ class TestGitResetHard:
 
     @patch('multi_agent.workflow.executor._is_git_worktree', return_value=True)
     @patch('multi_agent.workflow.executor.subprocess.run')
-    def test_does_not_raise_on_subprocess_failure(self, mock_run, _mock_wt):
+    def test_does_not_raise_on_subprocess_failure(self, mock_run, mock_wt):
         mock_run.side_effect = subprocess.CalledProcessError(1, 'git')
         from multi_agent.workflow.executor import _git_reset_hard
 

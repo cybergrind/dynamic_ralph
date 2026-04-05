@@ -11,12 +11,14 @@ license = { text = 'Apache-2.0' }
 requires-python = '>=3.13'
 dependencies = [
   'pydantic>=2.0',
+  "textual>=8.2.3",
 ]
 
 [project.scripts]
 dynamic-ralph = 'bin.run_dynamic_ralph:main'
 ralph-agent = 'bin.run_agent:main'
 ralph-retro = 'bin.run_retrospective:main'
+ralph-trace = 'bin.run_trace:main'
 
 [tool.hatch.build]
 exclude = ['.claude', 'run_ralph', '.env']

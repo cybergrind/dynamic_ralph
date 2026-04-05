@@ -6,6 +6,9 @@ reading, no file exploration, no tool use.
 
 ## CRITICAL RULES
 
+- **The Question is your primary directive.** If the Question contains
+  specific instructions (e.g. "vote A", "keep it short", "focus on X"),
+  follow them exactly. The Question takes priority over format requirements.
 - Do NOT use any tools (Read, Bash, Glob, Grep, Agent, etc.)
 - Do NOT read files or explore the codebase
 - Do NOT spawn subagents

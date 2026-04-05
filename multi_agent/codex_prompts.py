@@ -155,14 +155,16 @@ def build_propose_prompt(
 ) -> str:
     """Compose the PROPOSE phase prompt.
 
-    Order: IDENTITY → CODEX → TASK FRAMING → [PRIOR CONTEXT] → task instructions.
+    Order: IDENTITY → CODEX → [PRIOR CONTEXT] → task instructions → FRAME.
+    Frame text is placed last so user-specific instructions take precedence.
     *prior_context* is included only when provided (rounds 2+).
     *task_instructions* overrides the default ``_PROPOSE_TASK`` when provided.
     """
-    parts = [identity_text, codex_text, frame_text]
+    parts = [identity_text, codex_text]
     if prior_context:
         parts.append(f'## Prior Round Context\n\n{prior_context}')
     parts.append(task_instructions or _PROPOSE_TASK)
+    parts.append(frame_text)
     return _SEPARATOR.join(parts)
 
 
@@ -176,13 +178,15 @@ def build_debate_prompt(
 ) -> str:
     """Compose the DEBATE phase prompt.
 
-    Order: IDENTITY → CODEX → TASK FRAMING → ALL PROPOSALS → [PRIOR CONTEXT] → task instructions.
+    Order: IDENTITY → CODEX → ALL PROPOSALS → [PRIOR CONTEXT] → task instructions → FRAME.
+    Frame text is placed last so user-specific instructions take precedence.
     *task_instructions* overrides the default ``_DEBATE_TASK`` when provided.
     """
-    parts = [identity_text, codex_text, frame_text, all_proposals_text]
+    parts = [identity_text, codex_text, all_proposals_text]
     if prior_context:
         parts.append(f'## Prior Round Context\n\n{prior_context}')
     parts.append(task_instructions or _DEBATE_TASK)
+    parts.append(frame_text)
     return _SEPARATOR.join(parts)
 
 
@@ -192,13 +196,16 @@ def build_vote_prompt(
     all_proposals_text: str,
     all_debate_text: str,
     task_instructions: str | None = None,
+    frame_text: str | None = None,
 ) -> str:
     """Compose the VOTE phase prompt.
 
-    Order: IDENTITY → CODEX → ALL PROPOSALS → ALL DEBATE → task instructions.
-    Vote prompt omits task framing per codex spec.
+    Order: IDENTITY → CODEX → ALL PROPOSALS → ALL DEBATE → task instructions → FRAME.
+    Frame text is placed last so user-specific instructions take precedence.
     *task_instructions* overrides the default ``_VOTE_TASK`` when provided.
     """
     parts = [identity_text, codex_text, all_proposals_text, all_debate_text]
     parts.append(task_instructions or _VOTE_TASK)
+    if frame_text:
+        parts.append(frame_text)
     return _SEPARATOR.join(parts)

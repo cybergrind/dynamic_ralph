@@ -235,7 +235,10 @@ class TestResetInProgress:
         steps = [
             Step(id='step-001', type=StepType.planning, status=StepStatus.completed),
             Step(
-                id='step-002', type=StepType.architecture, status=StepStatus.in_progress, started_at='2025-01-01T00:00:00Z'
+                id='step-002',
+                type=StepType.architecture,
+                status=StepStatus.in_progress,
+                started_at='2025-01-01T00:00:00Z',
             ),
             Step(id='step-003', type=StepType.coding, status=StepStatus.pending),
         ]
@@ -257,7 +260,10 @@ class TestResetInProgress:
         steps = [
             Step(id='step-001', type=StepType.planning, status=StepStatus.completed),
             Step(
-                id='step-002', type=StepType.architecture, status=StepStatus.in_progress, started_at='2025-01-01T00:00:00Z'
+                id='step-002',
+                type=StepType.architecture,
+                status=StepStatus.in_progress,
+                started_at='2025-01-01T00:00:00Z',
             ),
         ]
         story = _make_story(steps=steps, status=StoryStatus.in_progress)

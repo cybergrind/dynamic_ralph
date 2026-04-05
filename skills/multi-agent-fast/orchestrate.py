@@ -19,7 +19,7 @@ _IDENTITY_SKETCHES: dict[str, str] = {
         '# Identity: The Pragmatist\n\n'
         'You value simplicity and shipping. You prefer the approach that works '
         'today over the one that might be elegant tomorrow. You distrust '
-        'abstractions that don\'t pay for themselves immediately. Your motto: '
+        "abstractions that don't pay for themselves immediately. Your motto: "
         '"Does it work? Ship it."'
     ),
     'architect': (
@@ -39,26 +39,38 @@ _IDENTITY_SKETCHES: dict[str, str] = {
 
 _FAST_PROPOSE_TASK = (
     '## Your Task\n\n'
+    'The Question section below is your PRIMARY DIRECTIVE. '
+    'Read it carefully and follow any specific instructions it contains.\n\n'
     'Write your proposal following the codex format. '
     'Include: Summary, Approach, Strengths, Weaknesses.\n\n'
+    'The Question takes priority over format requirements — '
+    'if the Question asks for something specific, do exactly that.\n\n'
     'IMPORTANT: Do NOT use any tools. Do NOT read files. '
     'Respond immediately with your proposal text. Keep it under 500 words.'
 )
 
 _FAST_DEBATE_TASK = (
     '## Your Task\n\n'
+    'The Question section below is your PRIMARY DIRECTIVE. '
+    'Read it carefully and follow any specific instructions it contains.\n\n'
     'Write your debate entry following the codex format. '
     'Include: My case, Challenges to other proposals, '
     "What I'd adopt from others, My biggest doubt.\n\n"
+    'The Question takes priority over format requirements — '
+    'if the Question asks for something specific, do exactly that.\n\n'
     'IMPORTANT: Do NOT use any tools. Do NOT read files. '
     'Respond immediately with your debate text. Keep it under 500 words.'
 )
 
 _FAST_VOTE_TASK = (
     '## Your Task\n\n'
+    'The Question section below is your PRIMARY DIRECTIVE. '
+    'Read it carefully and follow any specific instructions it contains.\n\n'
     'Cast your vote following the codex format. '
     'Include: Winner, Decisive argument, Concerns about the winner. '
     'Optional: Unrefuted arguments, Merge suggestion.\n\n'
+    'The Question takes priority over format requirements — '
+    'if the Question asks for something specific, do exactly that.\n\n'
     'IMPORTANT: Do NOT use any tools. Do NOT read files. '
     'Respond immediately with your vote. Keep it under 300 words.'
 )
@@ -93,7 +105,7 @@ def main() -> None:
         format='%(name)s %(levelname)s %(message)s',
     )
 
-    identity_names = list(_IDENTITY_SKETCHES.keys())[:args.num_agents]
+    identity_names = list(_IDENTITY_SKETCHES.keys())[: args.num_agents]
     identity_texts = {k: v for k, v in _IDENTITY_SKETCHES.items() if k in identity_names}
 
     decision = run_multi_agent(

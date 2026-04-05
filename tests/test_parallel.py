@@ -143,7 +143,7 @@ class TestSubprocessWatchdog:
             wd.start()
             wd.cancel()
             # Give the watchdog thread time to process the cancel
-            time.sleep(0.3)
+            time.sleep(0.05)
             assert wd.fired is False
             assert proc.poll() is None  # process still running
         finally:
@@ -161,7 +161,7 @@ class TestSubprocessWatchdog:
         wd = _SubprocessWatchdog(proc, timeout=5.0)
         wd.start()
         # Wait a bit — should not fire since process already exited
-        time.sleep(0.3)
+        time.sleep(0.05)
         wd.cancel()
         assert wd.fired is False
 
@@ -179,9 +179,9 @@ class TestSubprocessWatchdog:
             stderr=subprocess.PIPE,
         )
         try:
-            wd = _SubprocessWatchdog(proc, timeout=0.5)
+            wd = _SubprocessWatchdog(proc, timeout=0.5, grace_period=0.5)
             wd.start()
-            proc.wait(timeout=15)
+            proc.wait(timeout=5)
             assert wd.fired is True
             assert proc.returncode is not None
         finally:
@@ -284,7 +284,7 @@ class TestLaunchParallelAgents:
         backend = FakeBackend(script)
         prompts = {'hang-agent': 'do something'}
 
-        results = launch_parallel_agents(prompts, backend=backend, log_dir=tmp_path, timeout=2)
+        results = launch_parallel_agents(prompts, backend=backend, log_dir=tmp_path, timeout=0.5)
 
         assert 'hang-agent' in results
         result = results['hang-agent']
@@ -372,3 +372,65 @@ class TestLaunchParallelAgents:
         results = launch_parallel_agents(prompts, backend=backend, log_dir=tmp_path, timeout=30)
 
         assert results['fail-agent'].completion_status == 'crashed'
+
+
+# ===========================================================================
+# Tracer integration
+# ===========================================================================
+
+
+class TestTracerIntegration:
+    def test_tracer_emits_agent_spans(self, tmp_path: Path):
+        """When a tracer is passed, begin/end spans are emitted per agent."""
+        from multi_agent.trace import TraceWriter
+
+        script = _make_event_script(
+            {'kind': 'assistant', 'text': 'hello'},
+            {'kind': 'result', 'text': 'done'},
+        )
+        backend = FakeBackend(script)
+        prompts = {'A': 'do A', 'B': 'do B'}
+        trace_path = tmp_path / 'trace.jsonl'
+        tracer = TraceWriter(trace_path)
+
+        results = launch_parallel_agents(
+            prompts,
+            backend=backend,
+            log_dir=tmp_path,
+            timeout=30,
+            tracer=tracer,
+            trace_parent_id='test-phase',
+        )
+
+        assert set(results.keys()) == {'A', 'B'}
+
+        import json
+
+        lines = trace_path.read_text().strip().splitlines()
+        records = [json.loads(line) for line in lines]
+        # Should have begin + end for each agent (4 records minimum)
+        begins = [r for r in records if r['event'] == 'begin']
+        ends = [r for r in records if r['event'] == 'end']
+        assert len(begins) >= 2
+        assert len(ends) >= 2
+        # All agent spans reference the parent
+        for b in begins:
+            assert b['parent_id'] == 'test-phase'
+            assert b['kind'] == 'agent'
+
+    def test_no_tracer_no_trace_file(self, tmp_path: Path):
+        """When tracer is None, no trace file is created."""
+        script = _make_event_script(
+            {'kind': 'assistant', 'text': 'hello'},
+        )
+        backend = FakeBackend(script)
+        prompts = {'A': 'do A'}
+
+        launch_parallel_agents(
+            prompts,
+            backend=backend,
+            log_dir=tmp_path,
+            timeout=30,
+        )
+
+        assert not (tmp_path / 'trace.jsonl').exists()

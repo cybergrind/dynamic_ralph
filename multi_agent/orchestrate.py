@@ -48,6 +48,7 @@ from multi_agent.tally import (
     build_iteration_context,
     compute_tally,
 )
+from multi_agent.trace import TraceWriter
 
 
 log = logging.getLogger(__name__)
@@ -265,6 +266,8 @@ def _enforce_quorum(
     log_dir: Path,
     log_prefix: str = '',
     quorum_min: int = QUORUM_MIN,
+    tracer: TraceWriter | None = None,
+    trace_parent_id: str | None = None,
 ) -> dict[str, AgentResult]:
     """Retry failed agents once. Raise RuntimeError if still below *quorum_min*."""
     failed = {label: prompts[label] for label, r in results.items() if not _agent_succeeded(r)}
@@ -283,6 +286,18 @@ def _enforce_quorum(
         )
         return results
 
+    retry_span = (
+        tracer.begin(
+            f'{trace_parent_id}-quorum-retry' if trace_parent_id else 'quorum-retry',
+            'quorum_retry',
+            'quorum-retry',
+            parent_id=trace_parent_id,
+            failed_agents=list(failed.keys()),
+        )
+        if tracer
+        else None
+    )
+
     log.info('Retrying %d failed agents: %s', len(failed), list(failed.keys()))
     retry_results = launch_parallel_agents(
         failed,
@@ -291,12 +306,17 @@ def _enforce_quorum(
         timeout=timeout,
         log_dir=log_dir,
         log_prefix=f'{log_prefix}retry-',
+        tracer=tracer,
+        trace_parent_id=retry_span.span_id if retry_span else None,
     )
 
     merged = dict(results)
     for label, result in retry_results.items():
         if _agent_succeeded(result):
             merged[label] = result
+
+    if tracer and retry_span:
+        tracer.end(retry_span, recovered=sum(1 for r in retry_results.values() if _agent_succeeded(r)))
 
     succeeded = sum(1 for r in merged.values() if _agent_succeeded(r))
     if succeeded < quorum_min:
@@ -323,6 +343,8 @@ def run_propose(
     backend: AgentBackend | None = None,
     log_prefix: str = '',
     phase_config: PhaseConfig | None = None,
+    tracer: TraceWriter | None = None,
+    trace_parent_id: str | None = None,
 ) -> dict[str, str]:
     """Build per-agent PROPOSE prompts, launch in parallel, parse proposals.
 
@@ -341,6 +363,9 @@ def run_propose(
             task_instructions=cfg.propose_task,
         )
 
+    phase_span_id = f'{trace_parent_id}-propose' if trace_parent_id else 'propose'
+    phase_span = tracer.begin(phase_span_id, 'phase', 'propose', parent_id=trace_parent_id) if tracer else None
+
     phase_prefix = f'{log_prefix}propose-'
     results = launch_parallel_agents(
         prompts,
@@ -349,6 +374,8 @@ def run_propose(
         timeout=cfg.propose_timeout,
         log_dir=log_dir,
         log_prefix=phase_prefix,
+        tracer=tracer,
+        trace_parent_id=phase_span_id if tracer else None,
     )
     results = _enforce_quorum(
         results,
@@ -359,7 +386,12 @@ def run_propose(
         log_dir=log_dir,
         log_prefix=phase_prefix,
         quorum_min=cfg.quorum_min,
+        tracer=tracer,
+        trace_parent_id=phase_span_id if tracer else None,
     )
+
+    if tracer and phase_span:
+        tracer.end(phase_span)
 
     proposals_dir = round_dir / 'proposals'
     proposals_dir.mkdir(parents=True, exist_ok=True)
@@ -402,6 +434,8 @@ def run_debate(
     backend: AgentBackend | None = None,
     log_prefix: str = '',
     phase_config: PhaseConfig | None = None,
+    tracer: TraceWriter | None = None,
+    trace_parent_id: str | None = None,
 ) -> dict[str, str]:
     """Build per-agent DEBATE prompts, launch in parallel, extract debate entries.
 
@@ -422,6 +456,9 @@ def run_debate(
             task_instructions=cfg.debate_task,
         )
 
+    phase_span_id = f'{trace_parent_id}-debate' if trace_parent_id else 'debate'
+    phase_span = tracer.begin(phase_span_id, 'phase', 'debate', parent_id=trace_parent_id) if tracer else None
+
     phase_prefix = f'{log_prefix}debate-'
     results = launch_parallel_agents(
         prompts,
@@ -430,6 +467,8 @@ def run_debate(
         timeout=cfg.debate_timeout,
         log_dir=log_dir,
         log_prefix=phase_prefix,
+        tracer=tracer,
+        trace_parent_id=phase_span_id if tracer else None,
     )
     results = _enforce_quorum(
         results,
@@ -440,7 +479,12 @@ def run_debate(
         log_dir=log_dir,
         quorum_min=cfg.quorum_min,
         log_prefix=phase_prefix,
+        tracer=tracer,
+        trace_parent_id=phase_span_id if tracer else None,
     )
+
+    if tracer and phase_span:
+        tracer.end(phase_span)
 
     debate_dir = round_dir / 'debate'
     debate_dir.mkdir(parents=True, exist_ok=True)
@@ -469,6 +513,9 @@ def run_vote(
     backend: AgentBackend | None = None,
     log_prefix: str = '',
     phase_config: PhaseConfig | None = None,
+    frame_text: str | None = None,
+    tracer: TraceWriter | None = None,
+    trace_parent_id: str | None = None,
 ) -> dict[str, VoteResult]:
     """Build per-agent VOTE prompts, launch in parallel, parse votes.
 
@@ -489,7 +536,11 @@ def run_vote(
             all_proposals_text=all_proposals_text,
             all_debate_text=all_debate_text,
             task_instructions=cfg.vote_task,
+            frame_text=frame_text,
         )
+
+    phase_span_id = f'{trace_parent_id}-vote' if trace_parent_id else 'vote'
+    phase_span = tracer.begin(phase_span_id, 'phase', 'vote', parent_id=trace_parent_id) if tracer else None
 
     phase_prefix = f'{log_prefix}vote-'
     results = launch_parallel_agents(
@@ -499,6 +550,8 @@ def run_vote(
         timeout=cfg.vote_timeout,
         log_dir=log_dir,
         log_prefix=phase_prefix,
+        tracer=tracer,
+        trace_parent_id=phase_span_id if tracer else None,
     )
     results = _enforce_quorum(
         results,
@@ -509,7 +562,12 @@ def run_vote(
         log_dir=log_dir,
         log_prefix=phase_prefix,
         quorum_min=cfg.quorum_min,
+        tracer=tracer,
+        trace_parent_id=phase_span_id if tracer else None,
     )
+
+    if tracer and phase_span:
+        tracer.end(phase_span)
 
     votes_dir = round_dir / 'votes'
     votes_dir.mkdir(parents=True, exist_ok=True)
@@ -651,6 +709,9 @@ def run_multi_agent(
     work.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
 
+    tracer = TraceWriter(work / 'trace.jsonl')
+    run_span = tracer.begin('run', 'run', 'run')
+
     # Build frame
     frame = Frame(
         question=question,
@@ -720,6 +781,9 @@ def run_multi_agent(
             round_dir = work / f'round-{round_num}'
             round_dir.mkdir(parents=True, exist_ok=True)
 
+            round_span_id = f'round-{round_num}'
+            round_span = tracer.begin(round_span_id, 'round', round_span_id, parent_id='run')
+
             rnd_prefix = f'round-{round_num}-'
             resuming = round_num == start_round and resume_phase is not None
 
@@ -739,6 +803,8 @@ def run_multi_agent(
                     backend=backend,
                     log_prefix=rnd_prefix,
                     phase_config=phase_config,
+                    tracer=tracer,
+                    trace_parent_id=round_span_id,
                 )
 
             # DEBATE
@@ -758,6 +824,8 @@ def run_multi_agent(
                     backend=backend,
                     log_prefix=rnd_prefix,
                     phase_config=phase_config,
+                    tracer=tracer,
+                    trace_parent_id=round_span_id,
                 )
 
             # VOTE
@@ -776,6 +844,9 @@ def run_multi_agent(
                     backend=backend,
                     log_prefix=rnd_prefix,
                     phase_config=phase_config,
+                    frame_text=frame_text,
+                    tracer=tracer,
+                    trace_parent_id=round_span_id,
                 )
 
             # TALLY (always recompute)
@@ -796,6 +867,8 @@ def run_multi_agent(
                 tally.consensus_type,
                 tally.winner_pct,
             )
+
+            tracer.end(round_span)
 
             if tally.has_consensus():
                 log.info('Consensus reached in round %d', round_num)
@@ -836,9 +909,11 @@ def run_multi_agent(
         (work / 'decision.md').write_text(decision.decision_text)
         log.info('Decision: %s', decision.decision_text)
 
+        tracer.end(run_span, status=final_status)
         return decision
 
     except BaseException:
+        tracer.end(run_span, status='failed')
         _update_metadata(
             meta_path,
             finished_at=datetime.now(tz=timezone.utc).isoformat(),

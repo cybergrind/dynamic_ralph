@@ -310,7 +310,7 @@ class TestParseSectionsBoldHeadings:
         """Agents often write **Winner:** A instead of a heading + body."""
         text = (
             '**Winner:** A (all three are identical)\n\n'
-            '**Decisive argument:** The Runtime Engineer\'s point.\n\n'
+            "**Decisive argument:** The Runtime Engineer's point.\n\n"
             '**Concerns about the winner:** A: minor concern'
         )
         sections, diag = parse_sections(

@@ -16,10 +16,16 @@ import json
 import os
 import subprocess
 import threading
+import time as _time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from multi_agent.backend import AgentBackend, AgentEvent, AgentResult, get_backend
 from multi_agent.constants import MULTI_AGENT_MAX_WORKERS
+
+
+if TYPE_CHECKING:
+    from multi_agent.trace import TraceWriter
 
 
 # Only retain events that extract_result() inspects. Tool events (tool_use,
@@ -27,6 +33,8 @@ from multi_agent.constants import MULTI_AGENT_MAX_WORKERS
 # 5 agents run concurrently. All events are still written to the disk log.
 # CONTRACT: if extract_result() ever needs tool events, update this set.
 _RETAINED_KINDS: frozenset[str] = frozenset({'assistant', 'result', 'system', 'error'})
+
+_TERMINATE_GRACE_SECONDS: float = 5.0
 
 
 class _SubprocessWatchdog:
@@ -42,9 +50,12 @@ class _SubprocessWatchdog:
     on the subprocess.
     """
 
-    def __init__(self, proc: subprocess.Popen, timeout: float) -> None:
+    def __init__(
+        self, proc: subprocess.Popen, timeout: float, *, grace_period: float = _TERMINATE_GRACE_SECONDS
+    ) -> None:
         self._proc = proc
         self._timeout = timeout
+        self._grace_period = grace_period
         self._cancelled = threading.Event()
         self._fired = False
         self._thread: threading.Thread | None = None
@@ -61,7 +72,7 @@ class _SubprocessWatchdog:
             self._fired = True
             self._proc.terminate()
             try:
-                self._proc.wait(timeout=5)
+                self._proc.wait(timeout=self._grace_period)
             except subprocess.TimeoutExpired:
                 self._proc.kill()
                 self._proc.wait()
@@ -82,6 +93,9 @@ def _tee_stderr(pipe, log_file) -> None:
         log_file.flush()
 
 
+_PROGRESS_INTERVAL: float = 30.0  # seconds between progress heartbeats
+
+
 def launch_parallel_agents(
     prompts: dict[str, str],
     *,
@@ -90,6 +104,8 @@ def launch_parallel_agents(
     timeout: int = 900,
     log_dir: Path,
     log_prefix: str = '',
+    tracer: TraceWriter | None = None,
+    trace_parent_id: str | None = None,
 ) -> dict[str, AgentResult]:
     """Launch multiple agents in parallel, returning results keyed by label.
 
@@ -109,6 +125,9 @@ def launch_parallel_agents(
     agent_env = {k: v for k, v in os.environ.items() if k != 'CLAUDECODE'}
 
     def _run_one(label: str, prompt: str) -> tuple[str, AgentResult]:
+        span_id = f'{trace_parent_id}-{label}' if trace_parent_id else f'agent-{label}'
+        trace_span = tracer.begin(span_id, 'agent', f'agent-{label}', parent_id=trace_parent_id) if tracer else None
+
         cmd = backend.build_command(prompt, max_turns=max_turns)
         log_path = log_dir / f'{log_prefix}{label}.jsonl'
         stderr_log_path = log_dir / f'{log_prefix}{label}.stderr.log'
@@ -153,6 +172,8 @@ def launch_parallel_agents(
             stderr_thread.start()
 
             all_events: list[AgentEvent] = []
+            event_count = 0
+            last_progress = _time.monotonic()
 
             for event in backend.parse_events(iter(proc.stdout)):
                 # Write ALL events to disk log for post-mortem analysis
@@ -164,6 +185,15 @@ def launch_parallel_agents(
                 if event.kind in _RETAINED_KINDS:
                     all_events.append(event)
 
+                event_count += 1
+
+                # Periodic progress heartbeat for tracing
+                if tracer and trace_span:
+                    now = _time.monotonic()
+                    if now - last_progress >= _PROGRESS_INTERVAL:
+                        tracer.progress(trace_span, f'{event_count} events received')
+                        last_progress = now
+
             proc.wait()
         finally:
             # Cancel watchdog first to prevent it from firing during cleanup.
@@ -174,7 +204,7 @@ def launch_parallel_agents(
             if proc is not None and proc.poll() is None:
                 proc.terminate()
                 try:
-                    proc.wait(timeout=5)
+                    proc.wait(timeout=_TERMINATE_GRACE_SECONDS)
                 except subprocess.TimeoutExpired:
                     proc.kill()
                     proc.wait()
@@ -188,6 +218,18 @@ def launch_parallel_agents(
         timed_out = watchdog.fired if watchdog else False
         result = backend.extract_result(all_events, proc.returncode or 0)
         result.timed_out = timed_out
+
+        if tracer and trace_span:
+            tracer.end(
+                trace_span,
+                cost_usd=result.cost_usd,
+                input_tokens=result.input_tokens,
+                output_tokens=result.output_tokens,
+                timed_out=result.timed_out,
+                exit_code=result.exit_code,
+                num_turns=result.num_turns,
+            )
+
         return label, result
 
     results: dict[str, AgentResult] = {}

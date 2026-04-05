@@ -148,13 +148,15 @@ class TestCheckQualityGate:
 
 
 class TestBuildProposePrompt:
-    def test_ordering_identity_codex_frame(self) -> None:
+    def test_ordering_identity_codex_task_frame(self) -> None:
         result = build_propose_prompt('IDENTITY', 'CODEX', 'FRAME')
         parts = result.split(_SEPARATOR)
 
         assert parts[0] == 'IDENTITY'
         assert parts[1] == 'CODEX'
-        assert parts[2] == 'FRAME'
+        # task instructions before frame
+        assert parts[2].startswith('## Your Task')
+        assert parts[-1] == 'FRAME'
 
     def test_no_prior_context_by_default(self) -> None:
         result = build_propose_prompt('ID', 'CO', 'FR')
@@ -169,21 +171,20 @@ class TestBuildProposePrompt:
         result = build_propose_prompt('ID', 'CO', 'FR', prior_context='')
         assert 'Prior Round Context' not in result
 
-    def test_task_instructions_last(self) -> None:
+    def test_frame_is_last(self) -> None:
         result = build_propose_prompt('ID', 'CO', 'FR')
         parts = result.split(_SEPARATOR)
-        assert parts[-1].startswith('## Your Task')
-        assert 'Summary, Code sketch' in parts[-1]
+        assert parts[-1] == 'FR'
 
     def test_section_count_without_context(self) -> None:
         result = build_propose_prompt('ID', 'CO', 'FR')
         parts = result.split(_SEPARATOR)
-        assert len(parts) == 4  # identity, codex, frame, task
+        assert len(parts) == 4  # identity, codex, task, frame
 
     def test_section_count_with_context(self) -> None:
         result = build_propose_prompt('ID', 'CO', 'FR', prior_context='ctx')
         parts = result.split(_SEPARATOR)
-        assert len(parts) == 5  # identity, codex, frame, context, task
+        assert len(parts) == 5  # identity, codex, context, task, frame
 
 
 # ---------------------------------------------------------------------------
@@ -198,8 +199,10 @@ class TestBuildDebatePrompt:
 
         assert parts[0] == 'IDENTITY'
         assert parts[1] == 'CODEX'
-        assert parts[2] == 'FRAME'
-        assert parts[3] == 'PROPOSALS'
+        assert parts[2] == 'PROPOSALS'
+        # task instructions before frame
+        assert parts[3].startswith('## Your Task')
+        assert parts[-1] == 'FRAME'
 
     def test_includes_proposals(self) -> None:
         result = build_debate_prompt('ID', 'CO', 'FR', 'all proposals here')
@@ -214,21 +217,20 @@ class TestBuildDebatePrompt:
         result = build_debate_prompt('ID', 'CO', 'FR', 'PROP')
         assert 'Prior Round Context' not in result
 
-    def test_task_instructions_last(self) -> None:
+    def test_frame_is_last(self) -> None:
         result = build_debate_prompt('ID', 'CO', 'FR', 'PROP')
         parts = result.split(_SEPARATOR)
-        assert parts[-1].startswith('## Your Task')
-        assert 'My case' in parts[-1]
+        assert parts[-1] == 'FR'
 
     def test_section_count_without_context(self) -> None:
         result = build_debate_prompt('ID', 'CO', 'FR', 'PROP')
         parts = result.split(_SEPARATOR)
-        assert len(parts) == 5  # identity, codex, frame, proposals, task
+        assert len(parts) == 5  # identity, codex, proposals, task, frame
 
     def test_section_count_with_context(self) -> None:
         result = build_debate_prompt('ID', 'CO', 'FR', 'PROP', prior_context='ctx')
         parts = result.split(_SEPARATOR)
-        assert len(parts) == 6  # identity, codex, frame, proposals, context, task
+        assert len(parts) == 6  # identity, codex, proposals, context, task, frame
 
 
 # ---------------------------------------------------------------------------
@@ -246,20 +248,131 @@ class TestBuildVotePrompt:
         assert parts[2] == 'PROPOSALS'
         assert parts[3] == 'DEBATE'
 
-    def test_omits_task_framing(self) -> None:
-        """Vote prompt must NOT include task framing per codex spec."""
+    def test_without_frame_text(self) -> None:
         result = build_vote_prompt('IDENTITY', 'CODEX', 'PROPOSALS', 'DEBATE')
         parts = result.split(_SEPARATOR)
-        # Only 5 parts: identity, codex, proposals, debate, task instructions
+        # 5 parts: identity, codex, proposals, debate, task instructions
         assert len(parts) == 5
-
-    def test_task_instructions_last(self) -> None:
-        result = build_vote_prompt('ID', 'CO', 'PROP', 'DEB')
-        parts = result.split(_SEPARATOR)
         assert parts[-1].startswith('## Your Task')
-        assert 'Winner' in parts[-1]
+
+    def test_frame_text_is_last(self) -> None:
+        result = build_vote_prompt('ID', 'CO', 'PROP', 'DEB', frame_text='FRAME')
+        parts = result.split(_SEPARATOR)
+        assert len(parts) == 6
+        assert parts[-1] == 'FRAME'
+
+    def test_task_before_frame(self) -> None:
+        result = build_vote_prompt('ID', 'CO', 'PROP', 'DEB', frame_text='FRAME')
+        parts = result.split(_SEPARATOR)
+        assert parts[-2].startswith('## Your Task')
+        assert 'Winner' in parts[-2]
 
     def test_includes_both_proposals_and_debate(self) -> None:
         result = build_vote_prompt('ID', 'CO', 'all proposals', 'all debate')
         assert 'all proposals' in result
         assert 'all debate' in result
+
+
+# ---------------------------------------------------------------------------
+# TestFastPromptQuestionPriority
+# ---------------------------------------------------------------------------
+
+
+class TestFastPromptQuestionPriority:
+    """The fast-agent task prompts must tell agents to follow the user's question.
+
+    When custom task_instructions are provided (as multi-agent-fast does),
+    the built prompts must direct agents to treat the Question section as
+    their primary directive so that user instructions like "just vote A"
+    are not ignored in favour of format requirements.
+    """
+
+    def _load_fast_prompts(self) -> dict[str, str]:
+        """Import the fast orchestrator's task prompt strings."""
+        import importlib
+        import sys
+
+        skill_dir = str(Path(__file__).resolve().parent.parent / 'skills' / 'multi-agent-fast')
+        if skill_dir not in sys.path:
+            sys.path.insert(0, skill_dir)
+        # Force reimport in case of caching
+        sys.modules.pop('orchestrate', None)
+        mod = importlib.import_module('orchestrate')
+        return {
+            'propose': mod._FAST_PROPOSE_TASK,
+            'debate': mod._FAST_DEBATE_TASK,
+            'vote': mod._FAST_VOTE_TASK,
+        }
+
+    def test_propose_task_references_question(self) -> None:
+        prompts = self._load_fast_prompts()
+        task = prompts['propose'].lower()
+        assert 'question' in task, 'Fast propose task must reference the Question section'
+
+    def test_debate_task_references_question(self) -> None:
+        prompts = self._load_fast_prompts()
+        task = prompts['debate'].lower()
+        assert 'question' in task, 'Fast debate task must reference the Question section'
+
+    def test_vote_task_references_question(self) -> None:
+        prompts = self._load_fast_prompts()
+        task = prompts['vote'].lower()
+        assert 'question' in task, 'Fast vote task must reference the Question section'
+
+    def test_propose_task_signals_question_priority(self) -> None:
+        """The propose task must tell agents the question takes priority."""
+        prompts = self._load_fast_prompts()
+        task = prompts['propose'].lower()
+        assert any(
+            phrase in task
+            for phrase in ['primary directive', 'primary instruction', 'follow the question', 'question takes priority']
+        ), 'Fast propose task must signal that the question is the primary directive'
+
+    def test_debate_task_signals_question_priority(self) -> None:
+        prompts = self._load_fast_prompts()
+        task = prompts['debate'].lower()
+        assert any(
+            phrase in task
+            for phrase in ['primary directive', 'primary instruction', 'follow the question', 'question takes priority']
+        ), 'Fast debate task must signal that the question is the primary directive'
+
+    def test_vote_task_signals_question_priority(self) -> None:
+        prompts = self._load_fast_prompts()
+        task = prompts['vote'].lower()
+        assert any(
+            phrase in task
+            for phrase in ['primary directive', 'primary instruction', 'follow the question', 'question takes priority']
+        ), 'Fast vote task must signal that the question is the primary directive'
+
+    def test_propose_prompt_places_question_after_task(self) -> None:
+        """When built with fast task instructions, user question must come after task."""
+        prompts = self._load_fast_prompts()
+        result = build_propose_prompt(
+            'IDENTITY',
+            'CODEX',
+            '## Question\n\nJust say hello',
+            task_instructions=prompts['propose'],
+        )
+        task_pos = result.index('## Your Task')
+        question_pos = result.index('## Question')
+        assert question_pos > task_pos, 'Question must appear after task instructions so it gets highest attention'
+
+    def test_vote_prompt_includes_frame_with_question(self) -> None:
+        """Vote prompt must include the frame text containing the question."""
+        prompts = self._load_fast_prompts()
+        result = build_vote_prompt(
+            'IDENTITY',
+            'CODEX',
+            'PROPOSALS',
+            'DEBATE',
+            task_instructions=prompts['vote'],
+            frame_text='## Question\n\nVote A immediately',
+        )
+        assert 'Vote A immediately' in result
+
+    def test_fast_codex_reinforces_question_priority(self) -> None:
+        """The fast codex must tell agents the question is their primary directive."""
+        codex_path = Path(__file__).resolve().parent.parent / 'skills' / 'multi-agent-fast' / 'fast_codex.md'
+        codex_text = codex_path.read_text().lower()
+        assert 'primary directive' in codex_text, 'Fast codex must reinforce that the Question is the primary directive'
+        assert 'question' in codex_text

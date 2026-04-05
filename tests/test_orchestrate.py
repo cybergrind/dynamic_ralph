@@ -610,3 +610,50 @@ class TestCLIHelp:
         )
         assert result.returncode == 0
         assert '/multi-agent' in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# TestTraceIntegration — trace.jsonl written during run_multi_agent
+# ---------------------------------------------------------------------------
+
+
+class TestTraceIntegration:
+    def test_trace_file_created_with_spans(self, tmp_path: Path) -> None:
+        """run_multi_agent creates trace.jsonl with run/round/phase spans."""
+        import json
+
+        labels = ['A', 'B', 'C', 'D', 'E']
+        effects = [
+            {lbl: _proposal_result(lbl) for lbl in labels},
+            {lbl: _debate_result(lbl) for lbl in labels},
+            {lbl: _vote_result('A') for lbl in labels},
+        ]
+
+        with patch('multi_agent.orchestrate.launch_parallel_agents', side_effect=effects):
+            run_multi_agent(
+                'Test question',
+                identities=_TEST_IDENTITIES,
+                num_agents=5,
+                max_rounds=3,
+                working_dir=tmp_path,
+                codex_text=_TEST_CODEX,
+                identity_texts=_TEST_IDENTITY_TEXTS,
+            )
+
+        run_dirs = [d for d in tmp_path.iterdir() if d.is_dir()]
+        assert len(run_dirs) == 1
+        run_dir = run_dirs[0]
+
+        trace_path = run_dir / 'trace.jsonl'
+        assert trace_path.exists()
+
+        records = [json.loads(line) for line in trace_path.read_text().strip().splitlines()]
+        kinds = {r['kind'] for r in records}
+        assert 'run' in kinds
+        assert 'round' in kinds
+        assert 'phase' in kinds
+
+        # Verify begin/end pairs
+        begins = {r['span_id'] for r in records if r['event'] == 'begin'}
+        ends = {r['span_id'] for r in records if r['event'] == 'end'}
+        assert begins == ends, f'Unmatched spans: begins={begins - ends}, ends={ends - begins}'
