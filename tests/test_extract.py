@@ -27,6 +27,14 @@ class SimpleModel(BaseModel):
         return v.strip()
 
 
+class ReviewOutput(BaseModel):
+    """Non-vote model to prove the mechanism is model-agnostic."""
+
+    summary: str
+    verdict: str
+    critical_issues: str = ''
+
+
 def _good_text() -> str:
     return '## Winner\nA\n\n## Reason\nStrong argument'
 
@@ -146,6 +154,79 @@ class TestExtract:
         assert result.value is not None
         assert result.value.winner == 'Z'
         assert len(custom_called) == 1
+
+    def test_structured_output_used_when_provided(self) -> None:
+        """structured_output is validated directly — no markdown parsing needed."""
+        result = extract(
+            'unparseable garbage',
+            SimpleModel,
+            structured_output={'winner': 'B', 'reason': 'speed'},
+        )
+        assert result.succeeded
+        assert result.value is not None
+        assert result.value.winner == 'B'
+        assert result.value.reason == 'speed'
+
+    def test_structured_output_none_falls_back_to_markdown(self) -> None:
+        """When structured_output is None, existing markdown extraction runs."""
+        result = extract(_good_text(), SimpleModel, structured_output=None)
+        assert result.succeeded
+        assert result.value is not None
+        assert result.value.winner == 'A'
+
+    def test_structured_output_invalid_falls_back_to_markdown(self) -> None:
+        """Invalid structured_output falls back to markdown extraction."""
+        result = extract(
+            _good_text(),
+            SimpleModel,
+            structured_output={'winner': '', 'reason': 'x'},  # empty winner fails validator
+        )
+        assert result.succeeded
+        assert result.value is not None
+        assert result.value.winner == 'A'  # recovered via markdown
+
+    def test_structured_output_skips_retry(self) -> None:
+        """When structured_output validates, invoke is never called."""
+        invoked = []
+
+        def fake_invoke(prompt: str) -> AgentResult:
+            invoked.append(prompt)
+            return AgentResult(exit_code=0, full_response=_good_text())
+
+        result = extract(
+            'garbage',
+            SimpleModel,
+            structured_output={'winner': 'C', 'reason': 'solid'},
+            prompt='p',
+            invoke=fake_invoke,
+        )
+        assert result.succeeded
+        assert result.value is not None
+        assert result.value.winner == 'C'
+        assert len(invoked) == 0
+
+    def test_structured_output_with_arbitrary_pydantic_model(self) -> None:
+        """Any Pydantic BaseModel works — not limited to vote models."""
+        result = extract(
+            'irrelevant text',
+            ReviewOutput,
+            structured_output={'summary': 'Clean code', 'verdict': 'approve'},
+        )
+        assert result.succeeded
+        assert result.value is not None
+        assert result.value.summary == 'Clean code'
+        assert result.value.verdict == 'approve'
+        assert result.value.critical_issues == ''  # default
+
+    def test_arbitrary_model_validation_catches_missing_required(self) -> None:
+        """Pydantic validation is enforced for any model — missing 'verdict' fails."""
+        result = extract(
+            'no headings',
+            ReviewOutput,
+            structured_output={'summary': 'ok'},  # missing required 'verdict'
+        )
+        # structured_output fails, markdown also fails → not succeeded
+        assert not result.succeeded
 
     def test_default_extract_derives_headings(self) -> None:
         """Field names are converted to headings: 'winner' -> 'Winner',

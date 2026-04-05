@@ -266,6 +266,7 @@ def _enforce_quorum(
     log_dir: Path,
     log_prefix: str = '',
     quorum_min: int = QUORUM_MIN,
+    json_schema: dict | None = None,
     tracer: TraceWriter | None = None,
     trace_parent_id: str | None = None,
 ) -> dict[str, AgentResult]:
@@ -306,6 +307,7 @@ def _enforce_quorum(
         timeout=timeout,
         log_dir=log_dir,
         log_prefix=f'{log_prefix}retry-',
+        json_schema=json_schema,
         tracer=tracer,
         trace_parent_id=retry_span.span_id if retry_span else None,
     )
@@ -542,6 +544,8 @@ def run_vote(
     phase_span_id = f'{trace_parent_id}-vote' if trace_parent_id else 'vote'
     phase_span = tracer.begin(phase_span_id, 'phase', 'vote', parent_id=trace_parent_id) if tracer else None
 
+    vote_schema = VoteOutput.model_json_schema()
+
     phase_prefix = f'{log_prefix}vote-'
     results = launch_parallel_agents(
         prompts,
@@ -550,6 +554,7 @@ def run_vote(
         timeout=cfg.vote_timeout,
         log_dir=log_dir,
         log_prefix=phase_prefix,
+        json_schema=vote_schema,
         tracer=tracer,
         trace_parent_id=phase_span_id if tracer else None,
     )
@@ -562,12 +567,10 @@ def run_vote(
         log_dir=log_dir,
         log_prefix=phase_prefix,
         quorum_min=cfg.quorum_min,
+        json_schema=vote_schema,
         tracer=tracer,
         trace_parent_id=phase_span_id if tracer else None,
     )
-
-    if tracer and phase_span:
-        tracer.end(phase_span)
 
     votes_dir = round_dir / 'votes'
     votes_dir.mkdir(parents=True, exist_ok=True)
@@ -583,6 +586,7 @@ def run_vote(
                 timeout=cfg.vote_timeout,
                 log_dir=log_dir,
                 log_prefix=f'{phase_prefix}retry-{label}-',
+                json_schema=vote_schema,
             )
             return retry[label]
 
@@ -597,6 +601,7 @@ def run_vote(
         extraction = extract(
             text,
             VoteOutput,
+            structured_output=result.structured_output,
             prompt=prompts[label],
             invoke=_make_invoke(label),
             max_attempts=2,
@@ -631,6 +636,22 @@ def run_vote(
 
     write_phase_diagnostics(diagnostics, 'vote', round_dir)
     log.info('Vote: %s', summarize_phase_health(diagnostics))
+
+    if tracer and phase_span:
+        tracer.end(
+            phase_span,
+            votes={label: v.winner for label, v in votes.items()},
+            votes_parsed=len(votes),
+            agents_total=len(results),
+        )
+
+    if len(votes) < cfg.quorum_min:
+        log.warning(
+            'Vote parse quorum not met: %d/%d votes parsed (need %d)',
+            len(votes),
+            len(results),
+            cfg.quorum_min,
+        )
 
     return votes
 
@@ -868,7 +889,14 @@ def run_multi_agent(
                 tally.winner_pct,
             )
 
-            tracer.end(round_span)
+            tracer.end(
+                round_span,
+                winner=tally.winner,
+                consensus_type=tally.consensus_type,
+                winner_pct=tally.winner_pct,
+                vetoed=tally.vetoed,
+                vote_counts=tally.vote_counts,
+            )
 
             if tally.has_consensus():
                 log.info('Consensus reached in round %d', round_num)

@@ -203,6 +203,49 @@ def _make_two_round_trace(trace_path: Path) -> None:
             f.write(json.dumps(ev) + '\n')
 
 
+class TestAgentSpanStructuredOutput:
+    def test_structured_output_available_for_tui(self, tmp_path: Path):
+        """load_agent_spans carries structured_output for TUI introspection."""
+        from multi_agent.trace import load_agent_spans
+
+        structured = {'winner': 'A', 'decisive_argument': 'best approach'}
+        trace_path = tmp_path / 'trace.jsonl'
+        events = [
+            {
+                'event': 'begin',
+                'span_id': 'vote-A',
+                'kind': 'agent',
+                'label': 'agent-A',
+                'started_at': '2026-04-05T10:00:00+00:00',
+                't_offset_secs': 0.0,
+                'parent_id': 'vote',
+                'details': {'log_path': 'logs/vote-A.jsonl'},
+            },
+            {
+                'event': 'end',
+                'span_id': 'vote-A',
+                'kind': 'agent',
+                'label': 'agent-A',
+                'ended_at': '2026-04-05T10:00:03+00:00',
+                't_offset_secs': 3.0,
+                'elapsed_secs': 3.0,
+                'details': {
+                    'cost_usd': 0.01,
+                    'timed_out': False,
+                    'structured_output': structured,
+                },
+            },
+        ]
+        with open(trace_path, 'w') as f:
+            for ev in events:
+                f.write(json.dumps(ev) + '\n')
+
+        spans = load_agent_spans(trace_path)
+        assert len(spans) == 1
+        assert spans[0].structured_output == structured
+        assert spans[0].structured_output['winner'] == 'A'
+
+
 class TestBuildLineAgentMap:
     def test_duplicate_labels_map_to_distinct_spans(self, tmp_path: Path):
         """agent-A in round-1 and round-2 must map to different spans."""

@@ -304,8 +304,14 @@ def _build_app():
                 header += '  |  TIMEOUT'
             header += '\n' + '─' * 60 + '\n'
 
+            if span.structured_output:
+                header += '\nStructured Output:\n'
+                header += json.dumps(span.structured_output, indent=2) + '\n'
+                header += '─' * 60 + '\n'
+
             if span.log_path:
-                log_text = format_agent_log(Path(span.log_path))
+                run_dir = self.runs[self._selected_idx].path if self.runs else None
+                log_text = format_agent_log(Path(span.log_path), base_dir=run_dir)
             else:
                 log_text = '(no log file path recorded)'
 

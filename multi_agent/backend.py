@@ -75,6 +75,7 @@ class AgentResult:
     final_response: str = ''
     full_response: str = ''
     timed_out: bool = False
+    structured_output: dict | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +106,7 @@ class AgentBackend(Protocol):
         *,
         system_prompt: str = '',
         max_turns: int | None = None,
+        json_schema: dict | None = None,
     ) -> list[str]:
         """Return the command-line argv for a direct (non-Docker) invocation."""
         ...

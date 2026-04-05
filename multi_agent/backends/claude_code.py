@@ -29,6 +29,7 @@ class ClaudeCodeBackend:
         *,
         system_prompt: str = '',
         max_turns: int | None = None,
+        json_schema: dict | None = None,
     ) -> list[str]:
         cmd: list[str] = [
             'npx',
@@ -45,6 +46,9 @@ class ClaudeCodeBackend:
             cmd.extend(['--append-system-prompt', system_prompt])
         if max_turns is not None:
             cmd.extend(['--max-turns', str(max_turns)])
+        if json_schema is not None:
+            cmd.extend(['--json-schema', json.dumps(json_schema)])
+            cmd.extend(['--tools', ''])
         cmd.append(prompt)
         return cmd
 
@@ -203,6 +207,7 @@ class ClaudeCodeBackend:
                 result.input_tokens = raw.get('input_tokens', 0)
                 result.output_tokens = raw.get('output_tokens', 0)
                 result.completion_status = raw.get('subtype', 'unknown')
+                result.structured_output = raw.get('structured_output')
             elif ev.kind == 'assistant':
                 last_assistant_text = ev.text
                 all_assistant_parts.append(ev.text)

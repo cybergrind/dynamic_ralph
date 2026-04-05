@@ -65,6 +65,11 @@ class TestAgentResult:
         assert r.final_response == ''
         assert r.full_response == ''
         assert r.timed_out is False
+        assert r.structured_output is None
+
+    def test_structured_output_accepts_dict(self):
+        r = AgentResult(structured_output={'winner': 'A', 'score': 42})
+        assert r.structured_output == {'winner': 'A', 'score': 42}
 
 
 # ---------------------------------------------------------------------------
@@ -111,7 +116,7 @@ class TestAgentBackendProtocol:
 
     def test_custom_class_satisfies_protocol(self):
         class DummyBackend:
-            def build_command(self, prompt, *, system_prompt='', max_turns=None):
+            def build_command(self, prompt, *, system_prompt='', max_turns=None, json_schema=None):
                 return ['echo', prompt]
 
             def build_docker_command(self, base_cmd, *, agent_id, workspace):
@@ -157,6 +162,62 @@ class TestClaudeCodeBuildCommand:
         assert '--max-turns' in cmd
         idx = cmd.index('--max-turns')
         assert cmd[idx + 1] == '10'
+
+    def test_json_schema_none_backward_compat(self):
+        backend = ClaudeCodeBackend()
+        cmd = backend.build_command('task', json_schema=None)
+        assert '--json-schema' not in cmd
+        assert cmd[-1] == 'task'
+
+
+class TestClaudeCodeJsonSchema:
+    """Tests for --json-schema structured output flag generation."""
+
+    def test_json_schema_adds_flag(self):
+        backend = ClaudeCodeBackend()
+        schema = {'type': 'object', 'properties': {'winner': {'type': 'string'}}}
+        cmd = backend.build_command('task', json_schema=schema)
+        assert '--json-schema' in cmd
+        idx = cmd.index('--json-schema')
+        assert json.loads(cmd[idx + 1]) == schema
+
+    def test_json_schema_disables_other_tools(self):
+        """--tools "" forces agent to only use StructuredOutput (bypass prevention)."""
+        backend = ClaudeCodeBackend()
+        schema = {'type': 'object', 'properties': {'w': {'type': 'string'}}}
+        cmd = backend.build_command('task', json_schema=schema)
+        assert '--tools' in cmd
+        idx = cmd.index('--tools')
+        assert cmd[idx + 1] == ''
+
+    def test_no_json_schema_no_extra_flags(self):
+        backend = ClaudeCodeBackend()
+        cmd = backend.build_command('task')
+        assert '--json-schema' not in cmd
+        assert '--tools' not in cmd
+
+    def test_json_schema_works_with_any_model(self):
+        """Mechanism is model-agnostic — any schema dict produces the same flags."""
+        backend = ClaudeCodeBackend()
+        # Arbitrary non-vote schema
+        schema = {
+            'type': 'object',
+            'properties': {
+                'summary': {'type': 'string'},
+                'verdict': {'type': 'string'},
+            },
+            'required': ['summary', 'verdict'],
+        }
+        cmd = backend.build_command('review this', json_schema=schema)
+        assert '--json-schema' in cmd
+        idx = cmd.index('--json-schema')
+        assert json.loads(cmd[idx + 1]) == schema
+
+    def test_prompt_remains_last_arg_with_json_schema(self):
+        backend = ClaudeCodeBackend()
+        schema = {'type': 'object', 'properties': {'x': {'type': 'string'}}}
+        cmd = backend.build_command('my prompt', json_schema=schema)
+        assert cmd[-1] == 'my prompt'
 
 
 class TestClaudeCodeBuildDockerCommand:
@@ -357,6 +418,51 @@ class TestClaudeCodeExtractResult:
         assert result.exit_code == 0
         assert result.final_response == ''
         assert result.full_response == ''
+
+    def test_extracts_structured_output(self):
+        backend = ClaudeCodeBackend()
+        structured = {'winner': 'A', 'decisive_argument': 'simplicity'}
+        events = [
+            AgentEvent(kind='assistant', text='I vote for A'),
+            AgentEvent(
+                kind='result',
+                text='success',
+                raw={
+                    'num_turns': 1,
+                    'total_cost_usd': 0.01,
+                    'subtype': 'end_turn',
+                    'structured_output': structured,
+                },
+            ),
+        ]
+        result = backend.extract_result(events, exit_code=0)
+        assert result.structured_output == structured
+
+    def test_no_structured_output_stays_none(self):
+        backend = ClaudeCodeBackend()
+        events = [
+            AgentEvent(
+                kind='result',
+                text='success',
+                raw={'subtype': 'end_turn'},
+            ),
+        ]
+        result = backend.extract_result(events, exit_code=0)
+        assert result.structured_output is None
+
+    def test_structured_output_with_any_shape(self):
+        """structured_output works with arbitrary dict shapes (not vote-specific)."""
+        backend = ClaudeCodeBackend()
+        structured = {'summary': 'looks good', 'verdict': 'approve', 'score': 95}
+        events = [
+            AgentEvent(
+                kind='result',
+                text='success',
+                raw={'subtype': 'end_turn', 'structured_output': structured},
+            ),
+        ]
+        result = backend.extract_result(events, exit_code=0)
+        assert result.structured_output == structured
 
     def test_multiple_assistant_blocks(self):
         backend = ClaudeCodeBackend()

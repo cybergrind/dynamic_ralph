@@ -120,6 +120,165 @@ class TestTraceWriterThreadSafety:
             json.loads(line)
 
 
+class TestLoadAgentSpans:
+    def _write_trace(self, path: Path, events: list[dict]):
+        with open(path, 'w') as f:
+            for ev in events:
+                f.write(json.dumps(ev) + '\n')
+
+    def test_loads_structured_output_from_end_details(self, tmp_path):
+        """structured_output in agent end details is captured in AgentSpanInfo."""
+        from multi_agent.trace import load_agent_spans
+
+        structured = {'winner': 'A', 'decisive_argument': 'simplicity'}
+        trace_path = tmp_path / 'trace.jsonl'
+        self._write_trace(
+            trace_path,
+            [
+                {
+                    'event': 'begin',
+                    'span_id': 'agent-A',
+                    'kind': 'agent',
+                    'label': 'agent-A',
+                    'started_at': '2026-04-05T10:00:00+00:00',
+                    't_offset_secs': 0.0,
+                    'parent_id': 'vote',
+                    'details': {'log_path': '/logs/vote-A.jsonl'},
+                },
+                {
+                    'event': 'end',
+                    'span_id': 'agent-A',
+                    'kind': 'agent',
+                    'label': 'agent-A',
+                    'ended_at': '2026-04-05T10:00:05+00:00',
+                    't_offset_secs': 5.0,
+                    'elapsed_secs': 5.0,
+                    'details': {
+                        'cost_usd': 0.01,
+                        'timed_out': False,
+                        'structured_output': structured,
+                    },
+                },
+            ],
+        )
+
+        spans = load_agent_spans(trace_path)
+        assert len(spans) == 1
+        assert spans[0].structured_output == structured
+
+    def test_structured_output_none_when_absent(self, tmp_path):
+        """structured_output defaults to None when not in trace details."""
+        from multi_agent.trace import load_agent_spans
+
+        trace_path = tmp_path / 'trace.jsonl'
+        self._write_trace(
+            trace_path,
+            [
+                {
+                    'event': 'begin',
+                    'span_id': 'agent-A',
+                    'kind': 'agent',
+                    'label': 'agent-A',
+                    'started_at': '2026-04-05T10:00:00+00:00',
+                    't_offset_secs': 0.0,
+                    'parent_id': 'propose',
+                    'details': {'log_path': '/logs/propose-A.jsonl'},
+                },
+                {
+                    'event': 'end',
+                    'span_id': 'agent-A',
+                    'kind': 'agent',
+                    'label': 'agent-A',
+                    'ended_at': '2026-04-05T10:00:05+00:00',
+                    't_offset_secs': 5.0,
+                    'elapsed_secs': 5.0,
+                    'details': {'cost_usd': 0.05, 'timed_out': False},
+                },
+            ],
+        )
+
+        spans = load_agent_spans(trace_path)
+        assert len(spans) == 1
+        assert spans[0].structured_output is None
+
+
+class TestFormatAgentLogBaseDir:
+    def test_relative_log_path_resolved_against_base_dir(self, tmp_path):
+        """format_agent_log resolves relative paths against base_dir."""
+        from multi_agent.trace import format_agent_log
+
+        # Create log file in a subdirectory
+        logs_dir = tmp_path / 'run_dir' / 'logs'
+        logs_dir.mkdir(parents=True)
+        log_file = logs_dir / 'vote-A.jsonl'
+        log_file.write_text(json.dumps({'type': 'result', 'subtype': 'end_turn', 'num_turns': 1}) + '\n')
+
+        # Relative path as stored in trace.jsonl
+        relative_path = Path('logs/vote-A.jsonl')
+        base_dir = tmp_path / 'run_dir'
+
+        result = format_agent_log(relative_path, base_dir=base_dir)
+        assert result != '(log file not found)'
+        assert result != '(no events)'
+        assert 'end_turn' in result
+
+    def test_relative_path_includes_run_dir_prefix(self, tmp_path):
+        """log_path that already includes the run dir prefix still resolves.
+
+        In practice, log_path is stored as the full relative path from CWD at
+        recording time (e.g. run_ralph/multi-agent/<id>/logs/propose-A.jsonl).
+        base_dir is the absolute run directory. Naive base_dir/log_path would
+        double the path. The function must try the path as-is first.
+        """
+        from multi_agent.trace import format_agent_log
+
+        # Simulate: run dir at tmp_path/run_ralph/multi-agent/run123
+        run_dir = tmp_path / 'run_ralph' / 'multi-agent' / 'run123'
+        logs_dir = run_dir / 'logs'
+        logs_dir.mkdir(parents=True)
+        log_file = logs_dir / 'propose-A.jsonl'
+        log_file.write_text(
+            json.dumps({'type': 'assistant', 'message': {'content': [{'type': 'text', 'text': 'hello'}]}}) + '\n'
+        )
+
+        # CWD is tmp_path — log_path is relative from there
+        import os
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            # log_path as stored: full relative from CWD
+            log_path = Path('run_ralph/multi-agent/run123/logs/propose-A.jsonl')
+            # base_dir is the absolute run directory
+            base_dir = run_dir
+
+            result = format_agent_log(log_path, base_dir=base_dir)
+            assert result != '(log file not found)', f'Could not find {log_path} with base_dir={base_dir}'
+            assert 'hello' in result
+        finally:
+            os.chdir(old_cwd)
+
+    def test_absolute_log_path_ignores_base_dir(self, tmp_path):
+        """Absolute paths work regardless of base_dir."""
+        from multi_agent.trace import format_agent_log
+
+        log_file = tmp_path / 'vote-A.jsonl'
+        log_file.write_text(json.dumps({'type': 'result', 'subtype': 'end_turn', 'num_turns': 1}) + '\n')
+
+        result = format_agent_log(log_file, base_dir=Path('/nonexistent'))
+        assert 'end_turn' in result
+
+    def test_no_base_dir_uses_path_as_is(self, tmp_path):
+        """Without base_dir, path is used directly (backward compat)."""
+        from multi_agent.trace import format_agent_log
+
+        log_file = tmp_path / 'vote-A.jsonl'
+        log_file.write_text(json.dumps({'type': 'result', 'subtype': 'end_turn', 'num_turns': 1}) + '\n')
+
+        result = format_agent_log(log_file)
+        assert 'end_turn' in result
+
+
 class TestTraceSpan:
     def test_span_fields(self):
         span = TraceSpan(

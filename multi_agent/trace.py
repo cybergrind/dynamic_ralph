@@ -140,6 +140,7 @@ class AgentSpanInfo:
     elapsed_secs: float | None
     cost_usd: float | None
     timed_out: bool
+    structured_output: dict | None = None
 
 
 def load_agent_spans(trace_path: Path) -> list[AgentSpanInfo]:
@@ -172,6 +173,7 @@ def load_agent_spans(trace_path: Path) -> list[AgentSpanInfo]:
                     elapsed_secs=record.get('elapsed_secs'),
                     cost_usd=details.get('cost_usd'),
                     timed_out=details.get('timed_out', False),
+                    structured_output=details.get('structured_output'),
                 )
             )
 
@@ -292,8 +294,15 @@ def format_trace_report(trace_path: Path) -> str:
 # ---------------------------------------------------------------------------
 
 
-def format_agent_log(log_path: Path) -> str:
-    """Read a ``.jsonl`` agent event log and format all events for display."""
+def format_agent_log(log_path: Path, *, base_dir: Path | None = None) -> str:
+    """Read a ``.jsonl`` agent event log and format all events for display.
+
+    When *base_dir* is given and *log_path* is relative, tries the path
+    as-is first (it may already be valid from CWD), then falls back to
+    resolving against *base_dir*.
+    """
+    if not log_path.is_absolute() and not log_path.exists() and base_dir is not None:
+        log_path = base_dir / log_path
     if not log_path.exists():
         return '(log file not found)'
 

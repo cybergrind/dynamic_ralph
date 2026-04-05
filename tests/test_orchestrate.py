@@ -298,6 +298,30 @@ class TestQuorumEnforcement:
         # Quorum already met (3 succeeded), retry still happens but result is fine
         assert merged['A'].full_response == 'ok'
 
+    def test_enforce_quorum_passes_json_schema(self, tmp_path: Path) -> None:
+        """json_schema is forwarded to launch_parallel_agents on retry."""
+        results = {
+            'A': _make_result('ok'),
+            'B': _make_result('ok'),
+            'C': _make_result('fail', exit_code=1),
+        }
+        prompts = {'A': 'p', 'B': 'p', 'C': 'p'}
+        schema = {'type': 'object', 'properties': {'winner': {'type': 'string'}}}
+
+        with patch('multi_agent.orchestrate.launch_parallel_agents', return_value={'C': _make_result('ok')}) as mock:
+            _enforce_quorum(
+                results,
+                prompts,
+                backend=None,
+                max_turns=3,
+                timeout=300,
+                log_dir=tmp_path,
+                json_schema=schema,
+            )
+
+        mock.assert_called_once()
+        assert mock.call_args.kwargs.get('json_schema') == schema
+
     def test_below_quorum_after_retry_raises(self, tmp_path: Path) -> None:
         """3+ agents fail even after retry -> RuntimeError raised."""
         results = {
@@ -585,6 +609,156 @@ class TestRunVoteExtractRetry:
 
 
 # ---------------------------------------------------------------------------
+# TestRunVoteStructuredOutput — structured output integration
+# ---------------------------------------------------------------------------
+
+
+class TestRunVoteStructuredOutput:
+    """Verify run_vote() integrates with --json-schema structured output."""
+
+    def _setup(self, tmp_path):
+        labels = ['A', 'B', 'C', 'D', 'E']
+        proposals = {lbl: f'Proposal {lbl} text' for lbl in labels}
+        identity_texts = {f'i_{lbl.lower()}.md': f'You are agent {lbl}.' for lbl in labels}
+        frame = _make_frame(identities=list(identity_texts.keys()))
+        debate_entries = {lbl: f'Debate from {lbl}' for lbl in labels}
+        round_dir = tmp_path / 'round-1'
+        round_dir.mkdir(parents=True)
+        log_dir = tmp_path / 'logs'
+        log_dir.mkdir(parents=True)
+        return labels, proposals, identity_texts, frame, debate_entries, round_dir, log_dir
+
+    def test_run_vote_passes_json_schema(self, tmp_path: Path) -> None:
+        """run_vote passes VoteOutput JSON schema to launch_parallel_agents."""
+        labels, proposals, identity_texts, frame, debate_entries, round_dir, log_dir = self._setup(tmp_path)
+
+        initial_results = {lbl: _vote_result('A') for lbl in labels}
+
+        with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=initial_results) as mock:
+            run_vote(
+                frame,
+                proposals,
+                debate_entries,
+                identity_texts,
+                'codex',
+                round_dir,
+                log_dir,
+            )
+
+        # First call is the main launch (not quorum retry)
+        call_kwargs = mock.call_args_list[0].kwargs
+        assert 'json_schema' in call_kwargs
+        schema = call_kwargs['json_schema']
+        assert 'winner' in schema.get('properties', {})
+        assert 'decisive_argument' in schema.get('properties', {})
+        assert 'concerns_about_the_winner' in schema.get('properties', {})
+
+    def test_run_vote_reads_structured_output(self, tmp_path: Path) -> None:
+        """Agents with structured_output are parsed correctly even if full_response is garbage."""
+        labels, proposals, identity_texts, frame, debate_entries, round_dir, log_dir = self._setup(tmp_path)
+
+        structured = {
+            'winner': 'A',
+            'decisive_argument': 'Simplicity wins',
+            'concerns_about_the_winner': 'Minor perf concern',
+            'unrefuted_arguments': '',
+            'merge_suggestion': '',
+        }
+
+        initial_results = {}
+        for lbl in labels:
+            r = _make_result('unparseable garbage that would fail markdown extraction')
+            r.structured_output = structured
+            initial_results[lbl] = r
+
+        with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=initial_results):
+            votes = run_vote(
+                frame,
+                proposals,
+                debate_entries,
+                identity_texts,
+                'codex',
+                round_dir,
+                log_dir,
+            )
+
+        assert len(votes) == 5
+        assert all(v.winner == 'A' for v in votes.values())
+
+    def test_run_vote_fallback_without_structured_output(self, tmp_path: Path) -> None:
+        """structured_output=None falls back to markdown extraction."""
+        labels, proposals, identity_texts, frame, debate_entries, round_dir, log_dir = self._setup(tmp_path)
+
+        # No structured_output, but parseable markdown
+        initial_results = {lbl: _vote_result('A') for lbl in labels}
+
+        with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=initial_results):
+            votes = run_vote(
+                frame,
+                proposals,
+                debate_entries,
+                identity_texts,
+                'codex',
+                round_dir,
+                log_dir,
+            )
+
+        assert len(votes) == 5
+        assert all(v.winner == 'A' for v in votes.values())
+
+    def test_run_vote_structured_output_invalid_winner_skipped(self, tmp_path: Path) -> None:
+        """structured_output with unknown proposal label -> vote skipped."""
+        labels, proposals, identity_texts, frame, debate_entries, round_dir, log_dir = self._setup(tmp_path)
+
+        initial_results = {}
+        for lbl in labels:
+            r = _make_result('garbage')
+            r.structured_output = {
+                'winner': 'Z',  # not in proposals
+                'decisive_argument': 'whatever',
+                'concerns_about_the_winner': 'none',
+            }
+            initial_results[lbl] = r
+
+        with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=initial_results):
+            votes = run_vote(
+                frame,
+                proposals,
+                debate_entries,
+                identity_texts,
+                'codex',
+                round_dir,
+                log_dir,
+            )
+
+        assert len(votes) == 0  # all voted for unknown proposal Z
+
+    def test_run_vote_quorum_warning(self, tmp_path: Path, caplog) -> None:
+        """All agents fail to produce valid votes -> warning logged."""
+        labels, proposals, identity_texts, frame, debate_entries, round_dir, log_dir = self._setup(tmp_path)
+
+        # All agents return unparseable garbage with no structured_output
+        initial_results = {lbl: _make_result('random garbage') for lbl in labels}
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            with patch('multi_agent.orchestrate.launch_parallel_agents', return_value=initial_results):
+                votes = run_vote(
+                    frame,
+                    proposals,
+                    debate_entries,
+                    identity_texts,
+                    'codex',
+                    round_dir,
+                    log_dir,
+                )
+
+        assert len(votes) == 0
+        assert any('quorum' in r.message.lower() for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
 # TestCLIHelp — CLI entrypoint help argument
 # ---------------------------------------------------------------------------
 
@@ -652,6 +826,80 @@ class TestTraceIntegration:
         assert 'run' in kinds
         assert 'round' in kinds
         assert 'phase' in kinds
+
+    def test_vote_phase_span_includes_vote_details(self, tmp_path: Path) -> None:
+        """Vote phase end span includes per-agent vote results."""
+        import json
+
+        labels = ['A', 'B', 'C', 'D', 'E']
+        effects = [
+            {lbl: _proposal_result(lbl) for lbl in labels},
+            {lbl: _debate_result(lbl) for lbl in labels},
+            {lbl: _vote_result('A') for lbl in labels},
+        ]
+
+        with patch('multi_agent.orchestrate.launch_parallel_agents', side_effect=effects):
+            run_multi_agent(
+                'Test question',
+                identities=_TEST_IDENTITIES,
+                num_agents=5,
+                max_rounds=3,
+                working_dir=tmp_path,
+                codex_text=_TEST_CODEX,
+                identity_texts=_TEST_IDENTITY_TEXTS,
+            )
+
+        run_dirs = [d for d in tmp_path.iterdir() if d.is_dir()]
+        run_dir = run_dirs[0]
+        trace_path = run_dir / 'trace.jsonl'
+        records = [json.loads(line) for line in trace_path.read_text().strip().splitlines()]
+
+        # Find vote phase end span
+        vote_ends = [r for r in records if r['event'] == 'end' and r.get('label') == 'vote']
+        assert len(vote_ends) == 1
+        details = vote_ends[0]['details']
+        assert 'votes' in details
+        assert details['votes_parsed'] == 5
+        assert details['agents_total'] == 5
+        # Per-agent vote map
+        assert details['votes']['A'] == 'A'
+        assert details['votes']['B'] == 'A'
+
+    def test_round_span_includes_tally(self, tmp_path: Path) -> None:
+        """Round end span includes tally results (winner, consensus, pct)."""
+        import json
+
+        labels = ['A', 'B', 'C', 'D', 'E']
+        effects = [
+            {lbl: _proposal_result(lbl) for lbl in labels},
+            {lbl: _debate_result(lbl) for lbl in labels},
+            {lbl: _vote_result('A') for lbl in labels},
+        ]
+
+        with patch('multi_agent.orchestrate.launch_parallel_agents', side_effect=effects):
+            run_multi_agent(
+                'Test question',
+                identities=_TEST_IDENTITIES,
+                num_agents=5,
+                max_rounds=3,
+                working_dir=tmp_path,
+                codex_text=_TEST_CODEX,
+                identity_texts=_TEST_IDENTITY_TEXTS,
+            )
+
+        run_dirs = [d for d in tmp_path.iterdir() if d.is_dir()]
+        run_dir = run_dirs[0]
+        trace_path = run_dir / 'trace.jsonl'
+        records = [json.loads(line) for line in trace_path.read_text().strip().splitlines()]
+
+        # Find round end span
+        round_ends = [r for r in records if r['event'] == 'end' and r['kind'] == 'round']
+        assert len(round_ends) == 1
+        details = round_ends[0]['details']
+        assert details['winner'] == 'A'
+        assert details['consensus_type'] == 'strong'
+        assert details['winner_pct'] == 100.0
+        assert details['vetoed'] is False
 
         # Verify begin/end pairs
         begins = {r['span_id'] for r in records if r['event'] == 'begin'}

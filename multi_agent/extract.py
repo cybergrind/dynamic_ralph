@@ -127,6 +127,7 @@ def extract(
     text: str,
     model_cls: type[T],
     *,
+    structured_output: dict | None = None,
     extract_fn: Callable[[str], T] | None = None,
     prompt: str | None = None,
     invoke: Callable[[str], AgentResult] | None = None,
@@ -140,6 +141,11 @@ def extract(
         The agent's raw text output to parse.
     model_cls:
         The Pydantic model class to validate against.
+    structured_output:
+        Pre-validated structured output from the agent backend (e.g.
+        from ``--json-schema``).  When provided and valid, skips
+        markdown parsing entirely.  Falls back to markdown on
+        validation failure.
     extract_fn:
         Custom extraction function ``(text) -> model_instance``.
         Defaults to markdown-section-based extraction.
@@ -156,6 +162,22 @@ def extract(
     -------
     ExtractionResult[T] with ``.value`` set on success, ``None`` on exhaustion.
     """
+    # Fast path: try structured_output first (from --json-schema)
+    if structured_output is not None:
+        try:
+            value = model_cls.model_validate(structured_output)
+            return ExtractionResult(
+                value=value,
+                attempts=[Attempt(raw_text='<structured_output>', errors=[], succeeded=True)],
+            )
+        except (ValidationError, ValueError) as exc:
+            if isinstance(exc, ValidationError):
+                errors = _format_errors(exc)
+            else:
+                errors = [str(exc)]
+            log.warning('structured_output validation failed, falling back to markdown: %s', errors)
+
+    # Markdown extraction path (existing behavior)
     attempts: list[Attempt] = []
     current_text = text
 

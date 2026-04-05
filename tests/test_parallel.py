@@ -37,7 +37,9 @@ class FakeBackend:
         self._script = script
         self._exit_code = exit_code
 
-    def build_command(self, prompt: str, *, system_prompt: str = '', max_turns: int | None = None) -> list[str]:
+    def build_command(
+        self, prompt: str, *, system_prompt: str = '', max_turns: int | None = None, json_schema: dict | None = None
+    ) -> list[str]:
         # Encode the script inline so Popen can run it directly.
         return [sys.executable, '-c', self._script]
 
@@ -373,6 +375,50 @@ class TestLaunchParallelAgents:
 
         assert results['fail-agent'].completion_status == 'crashed'
 
+    def test_json_schema_passed_to_build_command(self, tmp_path: Path):
+        """json_schema kwarg is forwarded to backend.build_command."""
+        received_schemas: list = []
+
+        class SchemaTrackingBackend(FakeBackend):
+            def build_command(self, prompt, *, system_prompt='', max_turns=None, json_schema=None):
+                received_schemas.append(json_schema)
+                return super().build_command(prompt, system_prompt=system_prompt, max_turns=max_turns)
+
+        schema = {'type': 'object', 'properties': {'winner': {'type': 'string'}}}
+        script = _make_event_script({'kind': 'assistant', 'text': 'ok'})
+        backend = SchemaTrackingBackend(script)
+
+        launch_parallel_agents(
+            {'A': 'prompt A'},
+            backend=backend,
+            log_dir=tmp_path,
+            timeout=30,
+            json_schema=schema,
+        )
+
+        assert received_schemas == [schema]
+
+    def test_json_schema_none_by_default(self, tmp_path: Path):
+        """json_schema defaults to None when not provided."""
+        received_schemas: list = []
+
+        class SchemaTrackingBackend(FakeBackend):
+            def build_command(self, prompt, *, system_prompt='', max_turns=None, json_schema=None):
+                received_schemas.append(json_schema)
+                return super().build_command(prompt, system_prompt=system_prompt, max_turns=max_turns)
+
+        script = _make_event_script({'kind': 'assistant', 'text': 'ok'})
+        backend = SchemaTrackingBackend(script)
+
+        launch_parallel_agents(
+            {'A': 'prompt A'},
+            backend=backend,
+            log_dir=tmp_path,
+            timeout=30,
+        )
+
+        assert received_schemas == [None]
+
 
 # ===========================================================================
 # Tracer integration
@@ -419,6 +465,73 @@ class TestTracerIntegration:
             assert b['kind'] == 'agent'
             assert 'log_path' in b['details']
             assert b['details']['log_path'].endswith('.jsonl')
+
+    def test_tracer_records_structured_output(self, tmp_path: Path):
+        """Agent span end details include structured_output when present."""
+        from multi_agent.trace import TraceWriter
+
+        structured = {'winner': 'A', 'reason': 'simplicity'}
+        script = _make_event_script(
+            {'kind': 'assistant', 'text': 'I vote A'},
+            {'kind': 'result', 'text': 'done', 'structured_output': structured},
+        )
+
+        class StructuredBackend(FakeBackend):
+            def extract_result(self, events, exit_code):
+                result = super().extract_result(events, exit_code)
+                # Simulate reading structured_output from result event
+                for ev in events:
+                    if ev.kind == 'result':
+                        result.structured_output = ev.raw.get('structured_output')
+                return result
+
+        backend = StructuredBackend(script)
+        trace_path = tmp_path / 'trace.jsonl'
+        tracer = TraceWriter(trace_path)
+
+        results = launch_parallel_agents(
+            {'A': 'vote'},
+            backend=backend,
+            log_dir=tmp_path,
+            timeout=30,
+            tracer=tracer,
+            trace_parent_id='vote-phase',
+        )
+
+        assert results['A'].structured_output == structured
+
+        lines = trace_path.read_text().strip().splitlines()
+        records = [json.loads(line) for line in lines]
+        ends = [r for r in records if r['event'] == 'end' and r['kind'] == 'agent']
+        assert len(ends) == 1
+        assert ends[0]['details']['structured_output'] == structured
+
+    def test_tracer_omits_structured_output_when_none(self, tmp_path: Path):
+        """Agent span end details omit structured_output when None (no clutter)."""
+        from multi_agent.trace import TraceWriter
+
+        script = _make_event_script(
+            {'kind': 'assistant', 'text': 'hello'},
+            {'kind': 'result', 'text': 'done'},
+        )
+        backend = FakeBackend(script)
+        trace_path = tmp_path / 'trace.jsonl'
+        tracer = TraceWriter(trace_path)
+
+        launch_parallel_agents(
+            {'A': 'task'},
+            backend=backend,
+            log_dir=tmp_path,
+            timeout=30,
+            tracer=tracer,
+            trace_parent_id='phase',
+        )
+
+        lines = trace_path.read_text().strip().splitlines()
+        records = [json.loads(line) for line in lines]
+        ends = [r for r in records if r['event'] == 'end' and r['kind'] == 'agent']
+        assert len(ends) == 1
+        assert 'structured_output' not in ends[0]['details']
 
     def test_no_tracer_no_trace_file(self, tmp_path: Path):
         """When tracer is None, no trace file is created."""
