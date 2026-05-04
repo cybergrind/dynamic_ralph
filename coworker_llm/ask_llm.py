@@ -49,22 +49,28 @@ def build_prompt(paths: list[str], question: str) -> str:
     return f'Answer concisely: {question}'
 
 
+USAGE = (
+    'usage: ask-llm <words> [@path ...]               (freeform)\n'
+    '       ask-llm --paths <p1> <p2>... --question "<q>"  (flags)'
+)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(argv) if argv is not None else sys.argv[1:]
     if not args:
-        print(
-            'usage: ask-llm <words> [@path ...]               (freeform)\n'
-            '       ask-llm --paths <p1> <p2>... --question "<q>"  (flags)',
-            file=sys.stderr,
-        )
+        print(USAGE, file=sys.stderr)
         return 2
+    if args[0] in ('-h', '--help'):
+        print(USAGE)
+        return 0
 
     use_flags = any(tok in {'--paths', '--question', '-q'} for tok in args)
     paths, question = parse_flags(args) if use_flags else parse_freeform(args)
 
     prompt = build_prompt(paths, question)
+    attach = tuple(paths)
     try:
-        reply = run_opencode(prompt)
+        reply = run_opencode(prompt, attach=attach)
     except OpenCodeError as exc:
         print(str(exc), file=sys.stderr)
         return exc.returncode or 1

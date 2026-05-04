@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -38,6 +39,19 @@ class TestRunOpencode:
                 run_opencode('q')
         assert 'boom' in str(exc_info.value)
         assert exc_info.value.returncode == 2
+
+    def test_passes_dir_and_attach_files(self):
+        with patch('coworker_llm.opencode.subprocess.run', return_value=_completed(stdout='ok')) as mock_run:
+            run_opencode('do thing', dir='/work/area', attach=['/in/a.jsonl', '/in/b.txt'])
+        cmd = mock_run.call_args.args[0]
+        assert cmd[:3] == ['opencode', 'run', 'do thing']
+        # --dir must be passed
+        i = cmd.index('--dir')
+        assert cmd[i + 1] == '/work/area'
+        # each attach passed via -f
+        f_positions = [j for j, t in enumerate(cmd) if t == '-f']
+        assert len(f_positions) == 2
+        assert {cmd[j + 1] for j in f_positions} == {'/in/a.jsonl', '/in/b.txt'}
 
 
 class TestAskLlmFreeform:
@@ -99,6 +113,8 @@ class TestAskLlmFlags:
         assert 'What IPs?' in prompt
         assert '--paths' not in prompt
         assert '--question' not in prompt
+        # paths must be passed to opencode as attachments
+        assert mock.call_args.kwargs.get('attach') == ('a.py', 'b.py')
 
     def test_question_flag_alone_uses_no_paths(self):
         with patch('coworker_llm.ask_llm.run_opencode', return_value='ok') as mock:
@@ -117,25 +133,45 @@ class TestLlmWriteFlags:
         assert 'ref.py' in prompt
         assert 'out.py' in prompt
 
-    def test_main_with_flags(self):
-        with patch('coworker_llm.llm_write.run_opencode', return_value='ok') as mock:
-            rc = llm_write.main(['--spec', 'write a test', '--context', 'ref.py', '--target', 'out.py'])
+    def test_main_with_flags(self, tmp_path: Path):
+        target = tmp_path / 'out.py'
+
+        def fake(prompt: str, **_kwargs) -> str:
+            target.write_text('# generated\n')
+            return ''
+
+        with patch('coworker_llm.llm_write.run_opencode', side_effect=fake) as mock:
+            rc = llm_write.main(['--spec', 'write a test', '--context', 'ref.py', '--target', str(target)])
         assert rc == 0
         prompt = mock.call_args.args[0]
         assert 'write a test' in prompt
         assert 'ref.py' in prompt
-        assert 'out.py' in prompt
+        assert str(target) in prompt
+        # opencode invocation must be sandboxed via --dir + -f
+        assert mock.call_args.kwargs.get('dir') == str(tmp_path)
 
-    def test_main_freeform_two_at_paths(self):
-        # First @path is context, second @path is target; remaining words form the spec.
-        with patch('coworker_llm.llm_write.run_opencode', return_value='ok') as mock:
-            rc = llm_write.main(['make', 'a', 'pytest', 'for', '@ref.py', 'into', '@out.py'])
+    def test_main_freeform_two_at_paths(self, tmp_path: Path):
+        target = tmp_path / 'out.py'
+
+        def fake(prompt: str, **_kwargs) -> str:
+            target.write_text('# generated\n')
+            return ''
+
+        with patch('coworker_llm.llm_write.run_opencode', side_effect=fake) as mock:
+            rc = llm_write.main(['make', 'a', 'pytest', 'for', '@ref.py', 'into', f'@{target}'])
         assert rc == 0
         prompt = mock.call_args.args[0]
         assert 'ref.py' in prompt
-        assert 'out.py' in prompt
+        assert str(target) in prompt
         assert 'make a pytest' in prompt
         assert '@' not in prompt
+
+    def test_warns_when_target_not_created(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        target = tmp_path / 'never.py'
+        with patch('coworker_llm.llm_write.run_opencode', return_value=''):
+            rc = llm_write.main(['--spec', 'x', '--context', 'ref.py', '--target', str(target)])
+        assert rc != 0
+        assert str(target) in capsys.readouterr().err
 
 
 class TestExtractChat:
@@ -159,44 +195,163 @@ class TestExtractChat:
         assert '@' not in prompt
 
 
-class TestExtractChatOutputFlag:
-    def test_o_short_flag_extracts_to_file(self):
-        with patch('coworker_llm.extract_chat.run_opencode', return_value='[done]') as mock:
-            rc = extract_chat.main(['session.jsonl', '-o', '/tmp/chat.txt'])
-        assert rc == 0
-        prompt = mock.call_args.args[0]
-        assert 'session.jsonl' in prompt
-        assert '/tmp/chat.txt' in prompt
-        # extraction-mode prompt must instruct opencode to *write* the file
-        assert 'write' in prompt.lower()
-        assert '-o' not in prompt
+class TestExtractChatQuestionMode:
+    """--question routes through opencode (via --dir + -f to bypass permissions)."""
 
-    def test_long_flag_output_also_works(self):
-        with patch('coworker_llm.extract_chat.run_opencode', return_value='ok') as mock:
-            rc = extract_chat.main(['session.jsonl', '--output', '/tmp/x.txt'])
-        assert rc == 0
-        prompt = mock.call_args.args[0]
-        assert '/tmp/x.txt' in prompt
-        assert '--output' not in prompt
-        assert 'write' in prompt.lower()
+    def test_question_with_o_writes_via_opencode(self, tmp_path: Path):
+        src = tmp_path / 's.jsonl'
+        src.write_text('{"type":"user","message":{"role":"user","content":"hi"}}\n')
+        out = tmp_path / 'answer.txt'
 
-    def test_at_path_with_o_flag(self):
-        with patch('coworker_llm.extract_chat.run_opencode', return_value='ok') as mock:
-            rc = extract_chat.main(['@session.jsonl', '-o', '/tmp/chat.txt'])
-        assert rc == 0
-        prompt = mock.call_args.args[0]
-        assert 'session.jsonl' in prompt
-        assert '/tmp/chat.txt' in prompt
-        assert '@' not in prompt
-        assert '-o' not in prompt
+        def fake(prompt: str, **_kwargs) -> str:
+            out.write_text('answered')
+            return ''
 
-    def test_o_with_question_routes_answer_to_file(self):
-        with patch('coworker_llm.extract_chat.run_opencode', return_value='ok') as mock:
-            rc = extract_chat.main(['session.jsonl', '-o', '/tmp/x.txt', '--question', 'List decisions'])
+        with patch('coworker_llm.extract_chat.run_opencode', side_effect=fake) as mock:
+            rc = extract_chat.main([str(src), '-o', str(out), '--question', 'List decisions'])
+
         assert rc == 0
+        kwargs = mock.call_args.kwargs
+        assert kwargs.get('dir') == str(tmp_path)
+        assert str(src.resolve()) in kwargs.get('attach', ())
         prompt = mock.call_args.args[0]
         assert 'List decisions' in prompt
-        assert '/tmp/x.txt' in prompt
-        assert 'session.jsonl' in prompt
-        assert '-o' not in prompt
-        assert '--question' not in prompt
+        assert str(out) in prompt
+
+    def test_question_warns_when_opencode_does_not_create_file(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        src = tmp_path / 's.jsonl'
+        src.write_text('{"type":"user","message":{"role":"user","content":"hi"}}\n')
+        out = tmp_path / 'missing.txt'
+        with patch('coworker_llm.extract_chat.run_opencode', return_value=''):
+            rc = extract_chat.main([str(src), '-o', str(out), '--question', 'Q'])
+        assert rc != 0
+        assert str(out) in capsys.readouterr().err
+
+
+class TestHelpFlag:
+    @pytest.mark.parametrize('cmd', [ask_llm, llm_write, extract_chat])
+    @pytest.mark.parametrize('flag', ['-h', '--help'])
+    def test_help_exits_zero_and_does_not_call_opencode(self, cmd, flag, capsys: pytest.CaptureFixture[str]):
+        with patch.object(cmd, 'run_opencode', side_effect=AssertionError('help must not call opencode')):
+            rc = cmd.main([flag])
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert 'usage' in out.lower()
+
+
+class TestExtractChatOutputConfirmation:
+    """Local mode confirms byte count after writing."""
+
+    def test_confirms_when_file_written(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        src = tmp_path / 's.jsonl'
+        src.write_text(
+            '{"type":"user","message":{"role":"user","content":"' + 'x' * 100 + '"}}\n',
+        )
+        out = tmp_path / 'chat.txt'
+        rc = extract_chat.main([str(src), '-o', str(out)])
+        captured = capsys.readouterr()
+        all_output = captured.out + captured.err
+        assert rc == 0
+        assert str(out) in all_output
+        assert 'wrote' in all_output.lower()
+        assert out.is_file()
+
+
+class TestExtractTranscript:
+    """Default mode parses JSONL locally; never calls opencode (avoids context limits)."""
+
+    def test_simple_user_assistant_exchange(self, tmp_path: Path):
+        f = tmp_path / 's.jsonl'
+        f.write_text(
+            '{"type":"user","message":{"role":"user","content":"hi"}}\n'
+            '{"type":"assistant","message":{"role":"assistant","content":"hello back"}}\n',
+        )
+        result = extract_chat.extract_transcript(str(f))
+        assert 'hi' in result
+        assert 'hello back' in result
+        assert 'USER' in result
+        assert 'ASSISTANT' in result
+
+    def test_content_as_text_blocks(self, tmp_path: Path):
+        f = tmp_path / 's.jsonl'
+        f.write_text(
+            '{"type":"assistant","message":{"role":"assistant",'
+            '"content":[{"type":"text","text":"the answer is 42"}]}}\n',
+        )
+        assert 'the answer is 42' in extract_chat.extract_transcript(str(f))
+
+    def test_tool_use_block_becomes_placeholder(self, tmp_path: Path):
+        f = tmp_path / 's.jsonl'
+        f.write_text(
+            '{"type":"assistant","message":{"role":"assistant",'
+            '"content":[{"type":"tool_use","name":"Bash","input":{"command":"ls"}}]}}\n',
+        )
+        result = extract_chat.extract_transcript(str(f))
+        assert 'tool_use' in result.lower()
+        assert 'Bash' in result
+
+    def test_skips_invalid_json_lines(self, tmp_path: Path):
+        f = tmp_path / 's.jsonl'
+        f.write_text(
+            '{"type":"user","message":{"role":"user","content":"first"}}\n'
+            'not-json-garbage\n'
+            '{"type":"assistant","message":{"role":"assistant","content":"second"}}\n',
+        )
+        result = extract_chat.extract_transcript(str(f))
+        assert 'first' in result
+        assert 'second' in result
+
+    def test_skips_non_message_types(self, tmp_path: Path):
+        f = tmp_path / 's.jsonl'
+        f.write_text(
+            '{"type":"permission-mode","permissionMode":"default"}\n'
+            '{"type":"user","message":{"role":"user","content":"actual content"}}\n'
+            '{"type":"file-history-snapshot","messageId":"x"}\n',
+        )
+        result = extract_chat.extract_transcript(str(f))
+        assert 'actual content' in result
+        assert 'permission-mode' not in result
+        assert 'file-history-snapshot' not in result
+
+
+class TestExtractChatLocalMode:
+    def test_main_writes_to_o_locally(self, tmp_path: Path):
+        src = tmp_path / 's.jsonl'
+        src.write_text('{"type":"user","message":{"role":"user","content":"hello there"}}\n')
+        out = tmp_path / 'out.txt'
+        rc = extract_chat.main([str(src), '-o', str(out)])
+        assert rc == 0
+        assert out.is_file()
+        assert 'hello there' in out.read_text()
+
+    def test_main_local_does_not_call_opencode(self, tmp_path: Path):
+        src = tmp_path / 's.jsonl'
+        src.write_text('{"type":"user","message":{"role":"user","content":"hi"}}\n')
+        out = tmp_path / 'out.txt'
+        with patch(
+            'coworker_llm.extract_chat.run_opencode',
+            side_effect=AssertionError('local mode must not call opencode'),
+        ):
+            rc = extract_chat.main([str(src), '-o', str(out)])
+        assert rc == 0
+
+    def test_main_no_o_prints_to_stdout(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        src = tmp_path / 's.jsonl'
+        src.write_text('{"type":"user","message":{"role":"user","content":"hello stdout"}}\n')
+        with patch(
+            'coworker_llm.extract_chat.run_opencode',
+            side_effect=AssertionError('local mode must not call opencode'),
+        ):
+            rc = extract_chat.main([str(src)])
+        assert rc == 0
+        assert 'hello stdout' in capsys.readouterr().out
+
+    def test_main_question_still_routes_through_opencode(self, tmp_path: Path):
+        src = tmp_path / 's.jsonl'
+        src.write_text('{"type":"user","message":{"role":"user","content":"hi"}}\n')
+        with patch('coworker_llm.extract_chat.run_opencode', return_value='answer-text') as mock:
+            rc = extract_chat.main([str(src), '--question', 'what was discussed?'])
+        assert rc == 0
+        mock.assert_called_once()

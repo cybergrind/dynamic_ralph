@@ -1,8 +1,15 @@
-"""Subprocess wrapper for the `opencode run` CLI."""
+"""Subprocess wrapper for the `opencode run` CLI.
+
+opencode has a permission system that, by default, rejects writes outside its
+working directory (CWD) and may reject reads of files outside allowed roots.
+Pass `dir=` to set CWD via `--dir`, and `attach=` to attach input files via
+`-f` so opencode can read them regardless of location.
+"""
 
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Sequence
 
 
 class OpenCodeError(RuntimeError):
@@ -11,9 +18,19 @@ class OpenCodeError(RuntimeError):
         self.returncode = returncode
 
 
-def run_opencode(prompt: str) -> str:
+def run_opencode(
+    prompt: str,
+    *,
+    dir: str | None = None,
+    attach: Sequence[str] = (),
+) -> str:
+    cmd = ['opencode', 'run', prompt]
+    if dir is not None:
+        cmd += ['--dir', dir]
+    for path in attach:
+        cmd += ['-f', path]
     result = subprocess.run(
-        ['opencode', 'run', prompt],
+        cmd,
         capture_output=True,
         text=True,
         check=False,
