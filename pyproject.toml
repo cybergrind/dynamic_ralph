@@ -4,7 +4,7 @@ build-backend = 'hatchling.build'
 
 [project]
 name = 'dynamic-ralph'
-version = '0.4.0'
+version = '0.5.0'
 description = 'Dynamic Ralph: step-based multi-agent workflow orchestrator for Claude Code'
 authors = [{ name = 'github.com/cybergrind' }]
 license = { text = 'Apache-2.0' }
@@ -19,12 +19,15 @@ dynamic-ralph = 'bin.run_dynamic_ralph:main'
 ralph-agent = 'bin.run_agent:main'
 ralph-retro = 'bin.run_retrospective:main'
 ralph-trace = 'bin.run_trace:main'
+ask-llm = 'coworker_llm.ask_llm:main'
+llm-write = 'coworker_llm.llm_write:main'
+extract-chat = 'coworker_llm.extract_chat:main'
 
 [tool.hatch.build]
 exclude = ['.claude', 'run_ralph', '.env']
 
 [tool.hatch.build.targets.wheel]
-packages = ['multi_agent', 'bin']
+packages = ['multi_agent', 'bin', 'coworker_llm']
 
 [tool.hatch.build.targets.wheel.force-include]
 'docker/Dockerfile' = 'multi_agent/_data/docker/Dockerfile'
@@ -49,6 +52,9 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = 'auto'
 testpaths = ['tests']
+markers = [
+  'integration: hits real external services (opencode); opt-in via RUN_INTEGRATION=1',
+]
 
 [tool.ruff]
 line-length = 120
@@ -61,7 +67,7 @@ quote-style = 'single'
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
-known-first-party = ['multi_agent']
+known-first-party = ['multi_agent', 'coworker_llm']
 lines-after-imports = 2
 
 [tool.ruff.lint]
@@ -92,7 +98,7 @@ inline-quotes = 'single'
 multiline-quotes = 'single'
 
 [tool.pyrefly]
-project-includes = ['multi_agent', 'tests', 'bin']
+project-includes = ['multi_agent', 'tests', 'bin', 'coworker_llm']
 python-version = '3.13'
 python-platform = 'linux'
 site-package-path = ['.venv/lib/python3.13/site-packages']

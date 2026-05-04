@@ -12,6 +12,14 @@ dynamic_ralph/
 │   ├── run_dynamic_ralph.py # Main orchestrator (entry point)
 │   ├── run_agent.py         # Interactive agent runner in Docker
 │   └── run_retrospective.py # Retrospective analysis runner
+├── coworker_llm/            # Slash commands /ask-llm, /llm-write, /extract-chat
+│   ├── opencode.py          # subprocess wrapper for `opencode run`
+│   ├── ask_llm.py           # bulk file Q&A delegated to opencode
+│   ├── llm_write.py         # boilerplate generation via opencode
+│   ├── extract_chat.py      # transcript summarization via opencode
+│   └── claude_commands/     # markdown installed to ~/.claude/commands/
+├── scripts/
+│   └── install_coworker.sh  # `bash scripts/install_coworker.sh` to deploy
 ├── multi_agent/             # Core package
 │   ├── __init__.py          # Public re-exports
 │   ├── backend.py           # Agent backend abstraction

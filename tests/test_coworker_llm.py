@@ -1,0 +1,118 @@
+"""Tests for coworker_llm package: thin wrappers around `opencode run`."""
+
+from __future__ import annotations
+
+import subprocess
+from unittest.mock import patch
+
+import pytest
+
+from coworker_llm import ask_llm, extract_chat, llm_write
+from coworker_llm.opencode import OpenCodeError, run_opencode
+
+
+def _completed(returncode: int = 0, stdout: str = '', stderr: str = '') -> subprocess.CompletedProcess:
+    return subprocess.CompletedProcess(args=[], returncode=returncode, stdout=stdout, stderr=stderr)
+
+
+class TestRunOpencode:
+    def test_invokes_opencode_run_with_prompt(self):
+        with patch('coworker_llm.opencode.subprocess.run', return_value=_completed(stdout='ok')) as mock_run:
+            run_opencode('hello world')
+        args, kwargs = mock_run.call_args
+        assert args[0] == ['opencode', 'run', 'hello world']
+        assert kwargs['capture_output'] is True
+        assert kwargs['text'] is True
+        assert kwargs.get('check', False) is False
+
+    def test_returns_stdout_on_success(self):
+        with patch('coworker_llm.opencode.subprocess.run', return_value=_completed(stdout='reply\n')):
+            assert run_opencode('q') == 'reply\n'
+
+    def test_raises_opencode_error_on_failure(self):
+        with patch(
+            'coworker_llm.opencode.subprocess.run',
+            return_value=_completed(returncode=2, stdout='', stderr='boom'),
+        ):
+            with pytest.raises(OpenCodeError) as exc_info:
+                run_opencode('q')
+        assert 'boom' in str(exc_info.value)
+        assert exc_info.value.returncode == 2
+
+
+class TestAskLlmFreeform:
+    def test_extracts_at_paths_and_strips_prefix(self):
+        paths, question = ask_llm.parse_freeform(['what', 'is', 'in', '@foo.py'])
+        assert paths == ['foo.py']
+        assert '@' not in question
+        assert 'foo.py' in question
+        assert 'what is in' in question
+
+    def test_multiple_at_paths(self):
+        paths, question = ask_llm.parse_freeform(['compare', '@a.py', 'and', '@b.py', 'briefly'])
+        assert paths == ['a.py', 'b.py']
+        assert 'compare' in question
+        assert 'briefly' in question
+        assert 'a.py' in question
+        assert 'b.py' in question
+
+    def test_no_at_paths_treats_all_as_question(self):
+        paths, question = ask_llm.parse_freeform(['just', 'a', 'plain', 'question'])
+        assert paths == []
+        assert question == 'just a plain question'
+
+    def test_build_prompt_joins_paths(self):
+        prompt = ask_llm.build_prompt(['a.py', 'b.py'], 'What IPs are used?')
+        assert 'a.py' in prompt
+        assert 'b.py' in prompt
+        assert 'What IPs are used?' in prompt
+
+    def test_build_prompt_handles_empty_paths(self):
+        prompt = ask_llm.build_prompt([], 'A general question?')
+        assert 'A general question?' in prompt
+
+    def test_main_calls_run_opencode_with_freeform_argv(self, capsys: pytest.CaptureFixture[str]):
+        with patch('coworker_llm.ask_llm.run_opencode', return_value='answer-text') as mock:
+            rc = ask_llm.main(['what', 'entrypoints', '@pyproject.toml', 'has'])
+        assert rc == 0
+        prompt = mock.call_args.args[0]
+        assert 'pyproject.toml' in prompt
+        assert 'entrypoints' in prompt
+        assert '@' not in prompt
+        assert 'answer-text' in capsys.readouterr().out
+
+    def test_main_reports_error_on_opencode_failure(self, capsys: pytest.CaptureFixture[str]):
+        err = OpenCodeError('opencode failed: nope', returncode=2)
+        with patch('coworker_llm.ask_llm.run_opencode', side_effect=err):
+            rc = ask_llm.main(['what', '@a.py'])
+        assert rc != 0
+        assert 'nope' in capsys.readouterr().err
+
+
+class TestLlmWrite:
+    def test_build_prompt_includes_spec_reference_output(self):
+        prompt = llm_write.build_prompt(spec='write a test', reference='ref.py', output='out.py')
+        assert 'write a test' in prompt
+        assert 'ref.py' in prompt
+        assert 'out.py' in prompt
+
+
+class TestExtractChat:
+    def test_build_prompt_uses_default_question_when_none(self):
+        prompt = extract_chat.build_prompt('session.jsonl', question=None)
+        assert 'session.jsonl' in prompt
+        assert 'summary' in prompt.lower()
+
+    def test_build_prompt_uses_custom_question(self):
+        prompt = extract_chat.build_prompt('s.jsonl', question='List decisions')
+        assert 'List decisions' in prompt
+        assert 's.jsonl' in prompt
+
+    def test_main_freeform_extracts_at_path(self):
+        with patch('coworker_llm.extract_chat.run_opencode', return_value='ok') as mock:
+            rc = extract_chat.main(['@session.jsonl', 'list', 'decisions'])
+        assert rc == 0
+        prompt = mock.call_args.args[0]
+        assert 'session.jsonl' in prompt
+        assert 'list decisions' in prompt
+        assert '@' not in prompt
