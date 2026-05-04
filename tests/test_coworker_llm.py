@@ -89,12 +89,53 @@ class TestAskLlmFreeform:
         assert 'nope' in capsys.readouterr().err
 
 
-class TestLlmWrite:
-    def test_build_prompt_includes_spec_reference_output(self):
-        prompt = llm_write.build_prompt(spec='write a test', reference='ref.py', output='out.py')
+class TestAskLlmFlags:
+    def test_paths_and_question_flags(self):
+        with patch('coworker_llm.ask_llm.run_opencode', return_value='ok') as mock:
+            rc = ask_llm.main(['--paths', 'a.py', 'b.py', '--question', 'What IPs?'])
+        assert rc == 0
+        prompt = mock.call_args.args[0]
+        assert 'Read these files: a.py, b.py' in prompt
+        assert 'What IPs?' in prompt
+        assert '--paths' not in prompt
+        assert '--question' not in prompt
+
+    def test_question_flag_alone_uses_no_paths(self):
+        with patch('coworker_llm.ask_llm.run_opencode', return_value='ok') as mock:
+            rc = ask_llm.main(['--question', 'general question'])
+        assert rc == 0
+        prompt = mock.call_args.args[0]
+        assert 'general question' in prompt
+        assert 'Read these files' not in prompt
+        assert '--question' not in prompt
+
+
+class TestLlmWriteFlags:
+    def test_build_prompt_includes_spec_context_target(self):
+        prompt = llm_write.build_prompt(spec='write a test', context='ref.py', target='out.py')
         assert 'write a test' in prompt
         assert 'ref.py' in prompt
         assert 'out.py' in prompt
+
+    def test_main_with_flags(self):
+        with patch('coworker_llm.llm_write.run_opencode', return_value='ok') as mock:
+            rc = llm_write.main(['--spec', 'write a test', '--context', 'ref.py', '--target', 'out.py'])
+        assert rc == 0
+        prompt = mock.call_args.args[0]
+        assert 'write a test' in prompt
+        assert 'ref.py' in prompt
+        assert 'out.py' in prompt
+
+    def test_main_freeform_two_at_paths(self):
+        # First @path is context, second @path is target; remaining words form the spec.
+        with patch('coworker_llm.llm_write.run_opencode', return_value='ok') as mock:
+            rc = llm_write.main(['make', 'a', 'pytest', 'for', '@ref.py', 'into', '@out.py'])
+        assert rc == 0
+        prompt = mock.call_args.args[0]
+        assert 'ref.py' in prompt
+        assert 'out.py' in prompt
+        assert 'make a pytest' in prompt
+        assert '@' not in prompt
 
 
 class TestExtractChat:
