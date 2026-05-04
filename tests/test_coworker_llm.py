@@ -140,12 +140,12 @@ class TestLlmWriteFlags:
 
 class TestExtractChat:
     def test_build_prompt_uses_default_question_when_none(self):
-        prompt = extract_chat.build_prompt('session.jsonl', question=None)
+        prompt = extract_chat.build_prompt('session.jsonl', output=None, question=None)
         assert 'session.jsonl' in prompt
         assert 'summary' in prompt.lower()
 
     def test_build_prompt_uses_custom_question(self):
-        prompt = extract_chat.build_prompt('s.jsonl', question='List decisions')
+        prompt = extract_chat.build_prompt('s.jsonl', output=None, question='List decisions')
         assert 'List decisions' in prompt
         assert 's.jsonl' in prompt
 
@@ -157,3 +157,46 @@ class TestExtractChat:
         assert 'session.jsonl' in prompt
         assert 'list decisions' in prompt
         assert '@' not in prompt
+
+
+class TestExtractChatOutputFlag:
+    def test_o_short_flag_extracts_to_file(self):
+        with patch('coworker_llm.extract_chat.run_opencode', return_value='[done]') as mock:
+            rc = extract_chat.main(['session.jsonl', '-o', '/tmp/chat.txt'])
+        assert rc == 0
+        prompt = mock.call_args.args[0]
+        assert 'session.jsonl' in prompt
+        assert '/tmp/chat.txt' in prompt
+        # extraction-mode prompt must instruct opencode to *write* the file
+        assert 'write' in prompt.lower()
+        assert '-o' not in prompt
+
+    def test_long_flag_output_also_works(self):
+        with patch('coworker_llm.extract_chat.run_opencode', return_value='ok') as mock:
+            rc = extract_chat.main(['session.jsonl', '--output', '/tmp/x.txt'])
+        assert rc == 0
+        prompt = mock.call_args.args[0]
+        assert '/tmp/x.txt' in prompt
+        assert '--output' not in prompt
+        assert 'write' in prompt.lower()
+
+    def test_at_path_with_o_flag(self):
+        with patch('coworker_llm.extract_chat.run_opencode', return_value='ok') as mock:
+            rc = extract_chat.main(['@session.jsonl', '-o', '/tmp/chat.txt'])
+        assert rc == 0
+        prompt = mock.call_args.args[0]
+        assert 'session.jsonl' in prompt
+        assert '/tmp/chat.txt' in prompt
+        assert '@' not in prompt
+        assert '-o' not in prompt
+
+    def test_o_with_question_routes_answer_to_file(self):
+        with patch('coworker_llm.extract_chat.run_opencode', return_value='ok') as mock:
+            rc = extract_chat.main(['session.jsonl', '-o', '/tmp/x.txt', '--question', 'List decisions'])
+        assert rc == 0
+        prompt = mock.call_args.args[0]
+        assert 'List decisions' in prompt
+        assert '/tmp/x.txt' in prompt
+        assert 'session.jsonl' in prompt
+        assert '-o' not in prompt
+        assert '--question' not in prompt
