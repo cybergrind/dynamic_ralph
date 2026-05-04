@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Install coworker_llm CLIs on PATH and slash command markdown into ~/.claude/commands/.
+# Install coworker_llm CLIs (editable, so source edits take effect immediately
+# without reinstalling) and copy slash command markdown into ~/.claude/commands/.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-uv tool install --force .
+uv tool install --editable --force --reinstall .
 
 mkdir -p "$HOME/.claude/commands"
 cp coworker_llm/claude_commands/ask-llm.md \
@@ -13,6 +14,7 @@ cp coworker_llm/claude_commands/ask-llm.md \
    "$HOME/.claude/commands/"
 
 echo
-echo 'Installed. Verify with:'
+echo 'Installed (editable). Source edits take effect immediately — no reinstall needed.'
+echo 'Verify with:'
 echo '  which ask-llm llm-write extract-chat'
 echo '  ls ~/.claude/commands/ | grep -E "(ask-llm|llm-write|extract-chat)"'
