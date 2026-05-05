@@ -125,6 +125,31 @@ class TestAskLlmFlags:
         assert 'Read these files' not in prompt
         assert '--question' not in prompt
 
+    def test_main_with_question_file(self, tmp_path: Path):
+        question_file = tmp_path / 'q.md'
+        question_file.write_text(
+            'Find any reference to `BANANA` and $(SECRET) in these files.\nReport line numbers.',
+        )
+        with patch('coworker_llm.ask_llm.run_opencode', return_value='ok') as mock:
+            rc = ask_llm.main(['--paths', 'a.py', '--question-file', str(question_file)])
+        assert rc == 0
+        prompt = mock.call_args.args[0]
+        assert '`BANANA`' in prompt
+        assert '$(SECRET)' in prompt
+        assert 'a.py' in prompt
+        # paths still attached as before
+        assert mock.call_args.kwargs.get('attach') == ('a.py',)
+
+    def test_question_and_question_file_are_mutually_exclusive(self, tmp_path: Path):
+        qf = tmp_path / 'q.md'
+        qf.write_text('hello')
+        rc = ask_llm.main(['--question', 'x', '--question-file', str(qf)])
+        assert rc == 2
+
+    def test_question_or_question_file_is_required(self, tmp_path: Path):
+        rc = ask_llm.main(['--paths', 'a.py'])
+        assert rc == 2
+
 
 class TestLlmWriteFlags:
     def test_build_prompt_includes_spec_context_target(self):
@@ -172,6 +197,38 @@ class TestLlmWriteFlags:
             rc = llm_write.main(['--spec', 'x', '--context', 'ref.py', '--target', str(target)])
         assert rc != 0
         assert str(target) in capsys.readouterr().err
+
+    def test_main_with_spec_file(self, tmp_path: Path):
+        target = tmp_path / 'out.py'
+        spec_file = tmp_path / 'spec.md'
+        spec_file.write_text('Use `backticks` and $(subshells) — no shell hazards here.')
+
+        def fake(prompt: str, **_kwargs) -> str:
+            target.write_text('# generated\n')
+            return ''
+
+        with patch('coworker_llm.llm_write.run_opencode', side_effect=fake) as mock:
+            rc = llm_write.main(
+                ['--spec-file', str(spec_file), '--context', 'ref.py', '--target', str(target)],
+            )
+        assert rc == 0
+        prompt = mock.call_args.args[0]
+        assert '`backticks`' in prompt
+        assert '$(subshells)' in prompt
+        assert 'ref.py' in prompt
+
+    def test_spec_and_spec_file_are_mutually_exclusive(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        spec_file = tmp_path / 'spec.md'
+        spec_file.write_text('hello')
+        target = tmp_path / 'out.py'
+        rc = llm_write.main(
+            ['--spec', 'x', '--spec-file', str(spec_file), '--context', 'ref.py', '--target', str(target)],
+        )
+        assert rc == 2
+
+    def test_spec_or_spec_file_is_required(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        rc = llm_write.main(['--context', 'ref.py', '--target', str(tmp_path / 'out.py')])
+        assert rc == 2
 
 
 class TestExtractChat:

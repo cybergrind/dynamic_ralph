@@ -1,9 +1,14 @@
 """`/llm-write`: generate boilerplate via opencode using a reference for style.
 
-Two invocation styles, both supported:
+Three invocation styles, all supported:
 
-  Flag mode (matches LOWCOST.md):
+  Flag mode (short specs):
       llm-write --spec "<what>" --context <reference> --target <output>
+
+  Spec-file mode (recommended for long specs — bypasses shell quoting hazards
+  like backticks and $() that LLMs reflexively use in natural-language specs):
+      llm-write --spec-file <path> --context <reference> --target <output>
+      llm-write --spec-file -      --context <reference> --target <output>
 
   Freeform: first @path is the context (style reference), second @path is the
   target output path; remaining words form the spec.
@@ -17,6 +22,9 @@ import sys
 from pathlib import Path
 
 from coworker_llm.opencode import OpenCodeError, run_opencode
+
+
+FLAG_TOKENS = {'--spec', '--spec-file', '--context', '--target'}
 
 
 def parse_freeform(argv: list[str]) -> tuple[str, str, str]:
@@ -41,11 +49,19 @@ def parse_freeform(argv: list[str]) -> tuple[str, str, str]:
 
 def parse_flags(argv: list[str]) -> tuple[str, str, str]:
     parser = argparse.ArgumentParser(prog='llm-write', add_help=False)
-    parser.add_argument('--spec', required=True)
+    spec_group = parser.add_mutually_exclusive_group(required=True)
+    spec_group.add_argument('--spec')
+    spec_group.add_argument('--spec-file')
     parser.add_argument('--context', required=True)
     parser.add_argument('--target', required=True)
     args = parser.parse_args(argv)
-    return args.spec, args.context, args.target
+    if args.spec is not None:
+        spec = args.spec
+    elif args.spec_file == '-':
+        spec = sys.stdin.read()
+    else:
+        spec = Path(args.spec_file).read_text()
+    return spec, args.context, args.target
 
 
 def build_prompt(spec: str, context: str, target: str) -> str:
@@ -54,7 +70,11 @@ def build_prompt(spec: str, context: str, target: str) -> str:
 
 USAGE = (
     'usage: llm-write --spec "<what>" --context <ref> --target <out>\n'
-    '       llm-write <spec words> @<context> @<target>'
+    '       llm-write --spec-file <path> --context <ref> --target <out>\n'
+    '       llm-write <spec words> @<context> @<target>\n'
+    'tip: for long specs containing markdown backticks, $(...) or other\n'
+    '     shell-active characters, prefer --spec-file <path> to bypass shell\n'
+    '     quoting entirely. Use --spec-file - to read from stdin.'
 )
 
 
@@ -67,12 +87,14 @@ def main(argv: list[str] | None = None) -> int:
         print(USAGE)
         return 0
 
-    use_flags = any(tok in {'--spec', '--context', '--target'} for tok in args)
+    use_flags = any(tok in FLAG_TOKENS for tok in args)
     try:
         spec, context, target = parse_flags(args) if use_flags else parse_freeform(args)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    except SystemExit as exc:
+        return int(exc.code) if isinstance(exc.code, int) else 2
 
     prompt = build_prompt(spec, context, target)
     target_path = Path(target).resolve()
