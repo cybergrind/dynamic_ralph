@@ -104,11 +104,13 @@ def get_backend(name: str | None = None) -> CoworkerBackend:
 
 def _opencode_factory() -> CoworkerBackend:
     from coworker_llm.backends.opencode import OpenCodeBackend
+
     return OpenCodeBackend.from_env()
 
 
 def _claude_code_factory() -> CoworkerBackend:
     from coworker_llm.backends.claude_code import ClaudeCodeBackend
+
     return ClaudeCodeBackend.from_env()
 
 

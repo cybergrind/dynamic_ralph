@@ -28,7 +28,7 @@ def _available_backends() -> list[str]:
         try:
             if get_backend(name).is_available():
                 out.append(name)
-        except Exception:  # noqa: BLE001
+        except Exception:
             continue
     return out
 
@@ -41,17 +41,24 @@ def backend_name(request: pytest.FixtureRequest) -> str:
 
 
 def test_ask_llm_finds_token_in_file(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], backend_name: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    backend_name: str,
 ) -> None:
     sentinel = 'BANANA-7421'
     fixture = tmp_path / 'fixture.txt'
     fixture.write_text(f'project notes:\nthe deploy key is {sentinel}\n')
 
-    rc = ask_llm.main([
-        '--backend', backend_name,
-        '--paths', str(fixture),
-        '--question', 'What unusual all-caps token appears in this file?',
-    ])
+    rc = ask_llm.main(
+        [
+            '--backend',
+            backend_name,
+            '--paths',
+            str(fixture),
+            '--question',
+            'What unusual all-caps token appears in this file?',
+        ]
+    )
 
     assert rc == 0
     out = capsys.readouterr().out
@@ -59,19 +66,27 @@ def test_ask_llm_finds_token_in_file(
 
 
 def test_llm_write_produces_target_file(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], backend_name: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    backend_name: str,
 ) -> None:
     sentinel = 'PEAR-3030'
     reference = tmp_path / 'reference.txt'
     reference.write_text(f'this reference contains the token {sentinel}\n')
     target = tmp_path / 'generated.txt'
 
-    rc = llm_write.main([
-        '--backend', backend_name,
-        '--spec', f'Write a single line file containing exactly the token {sentinel}.',
-        '--context', str(reference),
-        '--target', str(target),
-    ])
+    rc = llm_write.main(
+        [
+            '--backend',
+            backend_name,
+            '--spec',
+            f'Write a single line file containing exactly the token {sentinel}.',
+            '--context',
+            str(reference),
+            '--target',
+            str(target),
+        ]
+    )
 
     assert rc == 0, f'[{backend_name}] llm-write failed; stderr/stdout:\n{capsys.readouterr()}'
     assert target.is_file(), f'[{backend_name}] expected coworker to create the target file'
@@ -79,7 +94,9 @@ def test_llm_write_produces_target_file(
 
 
 def test_extract_chat_question_mode(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], backend_name: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    backend_name: str,
 ) -> None:
     sentinel = 'KIWI-9090'
     transcript = tmp_path / 'session.jsonl'
@@ -89,12 +106,17 @@ def test_extract_chat_question_mode(
     )
     output = tmp_path / 'chat.txt'
 
-    rc = extract_chat.main([
-        str(transcript),
-        '--backend', backend_name,
-        '-o', str(output),
-        '--question', 'What is the exact secret token mentioned in the transcript? Reply with that token.',
-    ])
+    rc = extract_chat.main(
+        [
+            str(transcript),
+            '--backend',
+            backend_name,
+            '-o',
+            str(output),
+            '--question',
+            'What is the exact secret token mentioned in the transcript? Reply with that token.',
+        ]
+    )
 
     assert rc == 0, f'[{backend_name}] extract-chat failed; stderr/stdout:\n{capsys.readouterr()}'
     assert output.is_file(), f'[{backend_name}] expected coworker to create the output file'

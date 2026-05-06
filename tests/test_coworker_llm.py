@@ -254,9 +254,18 @@ class TestLlmWriteFlags:
 
         fake = FakeBackend(side_effect=materialize)
         with patch('coworker_llm.llm_write.get_backend', return_value=fake) as mock:
-            rc = llm_write.main([
-                '--spec', 's', '--context', 'r.py', '--target', str(target), '--backend', 'alt',
-            ])
+            rc = llm_write.main(
+                [
+                    '--spec',
+                    's',
+                    '--context',
+                    'r.py',
+                    '--target',
+                    str(target),
+                    '--backend',
+                    'alt',
+                ]
+            )
         assert rc == 0
         mock.assert_called_with('alt')
 
@@ -305,7 +314,9 @@ class TestExtractChatQuestionMode:
         assert str(out) in fake.request.prompt
 
     def test_question_warns_when_backend_does_not_create_file(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
     ):
         src = tmp_path / 's.jsonl'
         src.write_text('{"type":"user","message":{"role":"user","content":"hi"}}\n')

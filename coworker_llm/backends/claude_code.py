@@ -63,7 +63,11 @@ class ClaudeCodeBackend:
         cmd = self._build_argv(request)
         cwd = request.writes_dir
         result = subprocess.run(
-            cmd, capture_output=True, text=True, check=False, cwd=cwd,
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=cwd,
         )
         if result.returncode != 0:
             stderr = result.stderr.strip() or result.stdout.strip()

@@ -171,9 +171,16 @@ def run_one(backend_name: str, fixture: TaskFixture, dry_run: bool) -> RunOutcom
     except CoworkerError as exc:
         print(f'  ! cannot load backend: {exc}')
         return RunOutcome(
-            backend=backend_name, task=fixture.name, returncode=None,
-            elapsed=0.0, error=str(exc), target_exists=None, target_size=None,
-            sentinel_in_stdout=None, sentinel_in_target=None, stdout='',
+            backend=backend_name,
+            task=fixture.name,
+            returncode=None,
+            elapsed=0.0,
+            error=str(exc),
+            target_exists=None,
+            target_size=None,
+            sentinel_in_stdout=None,
+            sentinel_in_target=None,
+            stdout='',
         )
 
     describe = getattr(backend, 'describe', None)
@@ -181,7 +188,7 @@ def run_one(backend_name: str, fixture: TaskFixture, dry_run: bool) -> RunOutcom
         try:
             argv = describe(fixture.request)
             print(f'argv: {argv}')
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             print(f'argv: <describe() failed: {exc}>')
 
     if not backend.is_available():
@@ -191,9 +198,16 @@ def run_one(backend_name: str, fixture: TaskFixture, dry_run: bool) -> RunOutcom
         print('  (dry run; not invoking)')
         print()
         return RunOutcome(
-            backend=backend_name, task=fixture.name, returncode=None,
-            elapsed=0.0, error=None, target_exists=None, target_size=None,
-            sentinel_in_stdout=None, sentinel_in_target=None, stdout='',
+            backend=backend_name,
+            task=fixture.name,
+            returncode=None,
+            elapsed=0.0,
+            error=None,
+            target_exists=None,
+            target_size=None,
+            sentinel_in_stdout=None,
+            sentinel_in_target=None,
+            stdout='',
         )
 
     started = time.perf_counter()
@@ -271,14 +285,8 @@ def print_summary(outcomes: list[RunOutcome]) -> None:
     for o in outcomes:
         rc = '-' if o.returncode is None else str(o.returncode)
         target = '-' if o.target_exists is None else ('yes' if o.target_exists else 'no')
-        sent_out = (
-            '-' if o.sentinel_in_stdout is None
-            else ('yes' if o.sentinel_in_stdout else 'no')
-        )
-        sent_tgt = (
-            '-' if o.sentinel_in_target is None
-            else ('yes' if o.sentinel_in_target else 'no')
-        )
+        sent_out = '-' if o.sentinel_in_stdout is None else ('yes' if o.sentinel_in_stdout else 'no')
+        sent_tgt = '-' if o.sentinel_in_target is None else ('yes' if o.sentinel_in_target else 'no')
         print(f'{o.backend:<14}{o.task:<12}{rc:>4}  {o.elapsed:>7.2f}s  {target:<8}{sent_out:<10}{sent_tgt:<10}')
 
 
@@ -288,13 +296,15 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         description=__doc__.split('\n', 1)[0] if __doc__ else None,
     )
     parser.add_argument(
-        '--backend', '-b',
+        '--backend',
+        '-b',
         action='append',
         default=[],
         help='backend name (repeatable; required unless --list-backends)',
     )
     parser.add_argument(
-        '--task', '-t',
+        '--task',
+        '-t',
         choices=['ask', 'write', 'roundtrip'],
         default='roundtrip',
         help='built-in canonical task (default: roundtrip)',
@@ -340,10 +350,7 @@ def main(argv: list[str] | None = None) -> int:
             if custom:
                 prompt = args.prompt
                 if prompt is None:
-                    prompt = (
-                        sys.stdin.read() if args.prompt_file == '-'
-                        else Path(args.prompt_file).read_text()
-                    )
+                    prompt = sys.stdin.read() if args.prompt_file == '-' else Path(args.prompt_file).read_text()
                 fixture = build_custom_task(
                     per_run_dir,
                     prompt=prompt,
