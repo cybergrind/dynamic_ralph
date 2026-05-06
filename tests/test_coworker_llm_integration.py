@@ -1,24 +1,24 @@
-"""End-to-end tests that hit the real opencode CLI.
+"""End-to-end tests that hit a real coworker LLM backend.
 
 Opt-in: set RUN_INTEGRATION=1. Each test is slow (typically ~30-90s) because
-opencode invokes a hosted model.
+the backend invokes a hosted model.
 """
 
 from __future__ import annotations
 
 import os
-import shutil
 from pathlib import Path
 
 import pytest
 
 from coworker_llm import ask_llm, extract_chat, llm_write
+from coworker_llm.backend import get_backend
 
 
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(os.environ.get('RUN_INTEGRATION') != '1', reason='set RUN_INTEGRATION=1 to run'),
-    pytest.mark.skipif(shutil.which('opencode') is None, reason='opencode CLI not installed'),
+    pytest.mark.skipif(not get_backend().is_available(), reason='configured coworker backend is not installed'),
 ]
 
 
@@ -31,7 +31,7 @@ def test_ask_llm_finds_token_in_file(tmp_path: Path, capsys: pytest.CaptureFixtu
 
     assert rc == 0
     out = capsys.readouterr().out
-    assert sentinel in out, f'expected opencode reply to mention {sentinel}; got:\n{out}'
+    assert sentinel in out, f'expected coworker reply to mention {sentinel}; got:\n{out}'
 
 
 def test_llm_write_produces_target_file(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -52,7 +52,7 @@ def test_llm_write_produces_target_file(tmp_path: Path, capsys: pytest.CaptureFi
     )
 
     assert rc == 0, f'llm-write failed; stderr/stdout:\n{capsys.readouterr()}'
-    assert target.is_file(), 'expected opencode to create the target file'
+    assert target.is_file(), 'expected coworker to create the target file'
     assert sentinel in target.read_text()
 
 
@@ -68,5 +68,5 @@ def test_extract_chat_writes_output_file(tmp_path: Path, capsys: pytest.CaptureF
     rc = extract_chat.main([str(transcript), '-o', str(output)])
 
     assert rc == 0, f'extract-chat failed; stderr/stdout:\n{capsys.readouterr()}'
-    assert output.is_file(), 'expected opencode to create the output file'
+    assert output.is_file(), 'expected coworker to create the output file'
     assert sentinel in output.read_text()

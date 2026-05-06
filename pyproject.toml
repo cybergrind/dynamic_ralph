@@ -53,7 +53,7 @@ dev = [
 asyncio_mode = 'auto'
 testpaths = ['tests']
 markers = [
-  'integration: hits real external services (opencode); opt-in via RUN_INTEGRATION=1',
+  'integration: hits real external services via a coworker LLM backend; opt-in via RUN_INTEGRATION=1',
 ]
 
 [tool.ruff]
