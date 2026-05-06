@@ -9,7 +9,7 @@ Always run commands with `uv run`.
 - **Workflow engine** (`multi_agent/workflow/`) — sequential step executor; driven by `bin/run_dynamic_ralph.py`.
 - **Multi-agent codex** (`multi_agent/orchestrate.py` + `parallel.py`, `codex_prompts.py`, `parsing.py`, `tally.py`, `extract.py`, `trace.py`) — parallel FRAME → PROPOSE → DEBATE → VOTE → DECIDE deliberation; user-facing entrypoints live in `skills/multi-agent*/orchestrate.py`.
 - **Backends** (`multi_agent/backend.py`, `multi_agent/backends/claude_code.py`, `multi_agent/testing.py`) — `AgentBackend` protocol with prod (claude_code) and test (`TestingBackend`) implementations.
-- **Coworker LLM** (`coworker_llm/`) — opencode-backed slash commands (`/ask-llm`, `/llm-write`, `/extract-chat`) for cheap-model delegation.
+- **Coworker LLM** (`coworker_llm/`) — slash commands (`/ask-llm`, `/llm-write`, `/extract-chat`) that delegate to a configurable backend (default `opencode`, also `claude-code`). Selection via `--backend <name>` flag or `COWORKER_BACKEND` env. See `docs/coworker_llm_backends.md` and `scripts/coworker_smoke.py`.
 
 ## Project Structure
 
@@ -22,14 +22,16 @@ dynamic_ralph/
 │   ├── run_trace.py         # Trace-viewer TUI for run_ralph/ artifacts
 │   └── cast_vote            # Structured vote submission (validates VoteOutput)
 ├── coworker_llm/            # Slash commands /ask-llm, /llm-write, /extract-chat
-│   ├── opencode.py          # subprocess wrapper for `opencode run`
-│   ├── ask_llm.py           # bulk file Q&A delegated to opencode
-│   ├── llm_write.py         # boilerplate generation via opencode
-│   ├── extract_chat.py      # transcript summarization via opencode
+│   ├── backend.py           # CoworkerBackend protocol + get_backend registry
+│   ├── ask_llm.py           # bulk file Q&A; routes to the configured backend
+│   ├── llm_write.py         # boilerplate generation; routes to the configured backend
+│   ├── extract_chat.py      # transcript summarization (local + --question via backend)
+│   ├── backends/            # backend implementations (opencode, claude_code)
 │   ├── LOWCOST.md           # token-preservation prompt loaded by slash commands
 │   └── claude_commands/     # markdown installed to ~/.claude/commands/
 ├── scripts/
 │   ├── install_coworker.sh      # `bash scripts/install_coworker.sh` to deploy
+│   ├── coworker_smoke.py        # cross-backend smoke harness (canonical tasks)
 │   └── verify_docker_auth.py    # verify Claude Code auth inside ralph-agent container
 ├── multi_agent/             # Core package
 │   ├── __init__.py          # Public re-exports
@@ -80,6 +82,7 @@ dynamic_ralph/
 │   ├── howto_autonomous_code_generated.md# Autonomous-code how-to (generated)
 │   ├── howto_run_claude_in_docker.md     # Running Claude Code inside Docker
 │   ├── workflow_field_report.md          # Workflow engine field report
+│   ├── coworker_llm_backends.md          # Coworker backend protocol, env vars, harness
 │   └── plans/               # Roadmap / planning docs (00-index.md and friends)
 ├── tests/
 │   ├── __init__.py                       # Package marker
