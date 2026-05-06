@@ -9,7 +9,7 @@ Always run commands with `uv run`.
 - **Workflow engine** (`multi_agent/workflow/`) — sequential step executor; driven by `bin/run_dynamic_ralph.py`.
 - **Multi-agent codex** (`multi_agent/orchestrate.py` + `parallel.py`, `codex_prompts.py`, `parsing.py`, `tally.py`, `extract.py`, `trace.py`) — parallel FRAME → PROPOSE → DEBATE → VOTE → DECIDE deliberation; user-facing entrypoints live in `skills/multi-agent*/orchestrate.py`.
 - **Backends** (`multi_agent/backend.py`, `multi_agent/backends/claude_code.py`, `multi_agent/testing.py`) — `AgentBackend` protocol with prod (claude_code) and test (`TestingBackend`) implementations.
-- **Coworker LLM** (`coworker_llm/`) — slash commands (`/ask-llm`, `/llm-write`, `/extract-chat`) that delegate to a configurable backend (default `opencode`, also `claude-code`). Selection via `--backend <name>` flag or `COWORKER_BACKEND` env. See `docs/coworker_llm_backends.md` and `scripts/coworker_smoke.py`.
+- **Coworker LLM** (`coworker_llm/`) — slash commands (`/ask-llm`, `/llm-write`, `/extract-chat`) that delegate to a configurable backend (`opencode`, `claude-code`, `claude-api`). Selection via `--backend <name>` flag or `COWORKER_BACKEND` env. See `docs/coworker_llm_backends.md` and `scripts/coworker_smoke.py`.
 
 ## Project Structure
 

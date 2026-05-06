@@ -41,6 +41,21 @@ right place.
 | `COWORKER_CLAUDE_MODEL` | `claude-haiku-4-5` | Model id passed via `--model` |
 | `COWORKER_CLAUDE_UNRESTRICTED` | unset | Set to `1` to swap the explicit allowlist for `--dangerously-skip-permissions` |
 
+### claude-api
+
+**Placeholder.** Today shells out via `claude -p` exactly like
+`claude-code`, but with its own config namespace and a more capable
+default model. The intent is to swap the implementation to a direct
+Anthropic SDK call once we're ready to take on that dependency; the
+registry name and env-var contract are stable now to ease the future
+migration.
+
+| Env var | Default | Purpose |
+| --- | --- | --- |
+| `COWORKER_CLAUDE_API_BIN` | `claude` | Path to the binary |
+| `COWORKER_CLAUDE_API_MODEL` | `claude-sonnet-4-6` | Model id passed via `--model` |
+| `COWORKER_CLAUDE_API_UNRESTRICTED` | unset | Set to `1` to swap the explicit allowlist for `--dangerously-skip-permissions` |
+
 ## The protocol
 
 Every backend implements a small typed protocol defined in
@@ -146,8 +161,10 @@ message.
 
 ## Out of scope (deferred)
 
-- Direct Anthropic SDK backend (no subprocess) — would inline reads
-  into the prompt and register a Write tool scoped to `writes_dir`.
+- Replacing `claude-api` with a direct Anthropic SDK implementation —
+  would inline reads into the prompt and register a Write tool scoped
+  to `writes_dir`. The registry slot and env-var contract are already
+  in place; only the runtime needs to change.
 - Pi-agent backend — pending confirmation of the pi CLI's read/write
   permission flags.
 - Streaming output — `run()` returns a complete `CoworkerResult` today.

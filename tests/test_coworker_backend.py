@@ -15,6 +15,7 @@ from coworker_llm.backend import (
     get_backend,
     list_backends,
 )
+from coworker_llm.backends.claude_api import DEFAULT_MODEL as CLAUDE_API_DEFAULT_MODEL, ClaudeApiBackend
 from coworker_llm.backends.claude_code import DEFAULT_MODEL, ClaudeCodeBackend
 from coworker_llm.backends.opencode import OpenCodeBackend
 
@@ -214,6 +215,52 @@ class TestClaudeCodeBackend:
     def test_registry_resolves_claude_code(self):
         backend = get_backend('claude-code')
         assert backend.name == 'claude-code'
+
+
+class TestClaudeApiBackend:
+    def test_name_is_claude_api(self):
+        backend = ClaudeApiBackend()
+        assert backend.name == 'claude-api'
+
+    def test_default_model_differs_from_claude_code(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv('COWORKER_CLAUDE_API_MODEL', raising=False)
+        backend = ClaudeApiBackend.from_env()
+        argv = backend.describe(CoworkerRequest(prompt='q'))
+        i = argv.index('--model')
+        assert argv[i + 1] == CLAUDE_API_DEFAULT_MODEL
+        assert argv[i + 1] != DEFAULT_MODEL
+
+    def test_from_env_uses_independent_namespace(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv('COWORKER_CLAUDE_API_BIN', '/api/claude')
+        monkeypatch.setenv('COWORKER_CLAUDE_API_MODEL', 'api-model')
+        # claude-code env vars must NOT bleed in:
+        monkeypatch.setenv('COWORKER_CLAUDE_BIN', '/code/claude')
+        monkeypatch.setenv('COWORKER_CLAUDE_MODEL', 'code-model')
+        backend = ClaudeApiBackend.from_env()
+        argv = backend.describe(CoworkerRequest(prompt='q'))
+        assert argv[0] == '/api/claude'
+        i = argv.index('--model')
+        assert argv[i + 1] == 'api-model'
+
+    def test_unrestricted_env_var(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv('COWORKER_CLAUDE_API_UNRESTRICTED', '1')
+        backend = ClaudeApiBackend.from_env()
+        argv = backend.describe(CoworkerRequest(prompt='q'))
+        assert '--dangerously-skip-permissions' in argv
+
+    def test_registry_resolves_claude_api(self):
+        backend = get_backend('claude-api')
+        assert backend.name == 'claude-api'
+
+    def test_inherits_run_translation(self):
+        """Today this backend is a thin wrapper over claude -p; smoke-check the run path."""
+        backend = ClaudeApiBackend()
+        with patch(
+            'coworker_llm.backends.claude_code.subprocess.run',
+            return_value=_completed(stdout='ok'),
+        ):
+            result = backend.run(CoworkerRequest(prompt='hi'))
+        assert result.stdout == 'ok'
 
 
 class TestCoworkerResult:
