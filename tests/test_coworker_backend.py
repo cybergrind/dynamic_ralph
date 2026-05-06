@@ -15,6 +15,7 @@ from coworker_llm.backend import (
     get_backend,
     list_backends,
 )
+from coworker_llm.backends.claude_code import DEFAULT_MODEL, ClaudeCodeBackend
 from coworker_llm.backends.opencode import OpenCodeBackend
 
 
@@ -121,6 +122,98 @@ class TestOpenCodeBackend:
             assert backend.is_available() is True
         with patch('coworker_llm.backends.opencode.shutil.which', return_value=None):
             assert backend.is_available() is False
+
+
+class TestClaudeCodeBackend:
+    def test_argv_includes_prompt_model_and_allowed_tools(self):
+        backend = ClaudeCodeBackend(binary='claude', model='claude-haiku-4-5')
+        argv = backend.describe(CoworkerRequest(prompt='hi', writes_dir='/work'))
+        assert argv[0] == 'claude'
+        assert '-p' in argv
+        assert 'hi' in argv
+        i = argv.index('--model')
+        assert argv[i + 1] == 'claude-haiku-4-5'
+        i = argv.index('--allowedTools')
+        # following entries up to next flag are tool names
+        assert 'Read' in argv
+        assert 'Write' in argv
+        assert 'Edit' in argv
+
+    def test_argv_adds_writes_dir_to_allowed_dirs(self):
+        backend = ClaudeCodeBackend()
+        argv = backend.describe(CoworkerRequest(prompt='q', writes_dir='/work'))
+        i = argv.index('--add-dir')
+        assert argv[i + 1] == '/work'
+
+    def test_argv_adds_parent_of_each_read(self):
+        backend = ClaudeCodeBackend()
+        argv = backend.describe(CoworkerRequest(prompt='q', reads=('/a/b/x.py', '/a/c/y.py')))
+        positions = [j for j, t in enumerate(argv) if t == '--add-dir']
+        added = {argv[j + 1] for j in positions}
+        assert '/a/b' in added
+        assert '/a/c' in added
+
+    def test_argv_does_not_double_writes_dir(self):
+        backend = ClaudeCodeBackend()
+        argv = backend.describe(CoworkerRequest(prompt='q', reads=('/work/x.py',), writes_dir='/work'))
+        positions = [j for j, t in enumerate(argv) if t == '--add-dir']
+        added = [argv[j + 1] for j in positions]
+        assert added.count('/work') == 1
+
+    def test_argv_uses_dangerously_skip_when_unrestricted(self):
+        backend = ClaudeCodeBackend(unrestricted=True)
+        argv = backend.describe(CoworkerRequest(prompt='q'))
+        assert '--dangerously-skip-permissions' in argv
+        assert '--allowedTools' not in argv
+
+    def test_run_passes_cwd_to_subprocess(self):
+        backend = ClaudeCodeBackend()
+        captured: dict[str, object] = {}
+
+        def fake_run(cmd, **kwargs):
+            captured['cwd'] = kwargs.get('cwd')
+            captured['cmd'] = cmd
+            return _completed(stdout='ok')
+
+        with patch('coworker_llm.backends.claude_code.subprocess.run', side_effect=fake_run):
+            backend.run(CoworkerRequest(prompt='q', writes_dir='/work'))
+        assert captured['cwd'] == '/work'
+
+    def test_run_raises_with_backend_name(self):
+        backend = ClaudeCodeBackend()
+        with patch(
+            'coworker_llm.backends.claude_code.subprocess.run',
+            return_value=_completed(returncode=1, stderr='boom'),
+        ):
+            with pytest.raises(CoworkerError) as exc_info:
+                backend.run(CoworkerRequest(prompt='q'))
+        assert 'claude-code' in str(exc_info.value)
+        assert 'boom' in str(exc_info.value)
+        assert exc_info.value.returncode == 1
+
+    def test_from_env_reads_overrides(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv('COWORKER_CLAUDE_BIN', '/custom/claude')
+        monkeypatch.setenv('COWORKER_CLAUDE_MODEL', 'custom-model')
+        monkeypatch.setenv('COWORKER_CLAUDE_UNRESTRICTED', '1')
+        backend = ClaudeCodeBackend.from_env()
+        argv = backend.describe(CoworkerRequest(prompt='q'))
+        assert argv[0] == '/custom/claude'
+        i = argv.index('--model')
+        assert argv[i + 1] == 'custom-model'
+        assert '--dangerously-skip-permissions' in argv
+
+    def test_from_env_default_model(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv('COWORKER_CLAUDE_MODEL', raising=False)
+        monkeypatch.delenv('COWORKER_CLAUDE_BIN', raising=False)
+        monkeypatch.delenv('COWORKER_CLAUDE_UNRESTRICTED', raising=False)
+        backend = ClaudeCodeBackend.from_env()
+        argv = backend.describe(CoworkerRequest(prompt='q'))
+        i = argv.index('--model')
+        assert argv[i + 1] == DEFAULT_MODEL
+
+    def test_registry_resolves_claude_code(self):
+        backend = get_backend('claude-code')
+        assert backend.name == 'claude-code'
 
 
 class TestCoworkerResult:

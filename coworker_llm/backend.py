@@ -107,6 +107,12 @@ def _opencode_factory() -> CoworkerBackend:
     return OpenCodeBackend.from_env()
 
 
+def _claude_code_factory() -> CoworkerBackend:
+    from coworker_llm.backends.claude_code import ClaudeCodeBackend
+    return ClaudeCodeBackend.from_env()
+
+
 _BACKEND_FACTORIES: dict[str, Callable[[], CoworkerBackend]] = {
     'opencode': _opencode_factory,
+    'claude-code': _claude_code_factory,
 }
