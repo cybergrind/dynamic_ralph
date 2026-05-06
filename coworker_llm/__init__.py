@@ -1,4 +1,18 @@
-from coworker_llm.opencode import OpenCodeError, run_opencode
+from coworker_llm.backend import (
+    CoworkerBackend,
+    CoworkerError,
+    CoworkerRequest,
+    CoworkerResult,
+    get_backend,
+    list_backends,
+)
 
 
-__all__ = ['OpenCodeError', 'run_opencode']
+__all__ = [
+    'CoworkerBackend',
+    'CoworkerError',
+    'CoworkerRequest',
+    'CoworkerResult',
+    'get_backend',
+    'list_backends',
+]

@@ -1,7 +1,7 @@
 """`/extract-chat`: process Claude Code session transcripts.
 
 Default mode parses the JSONL **locally** and emits plain-text role-prefixed
-content. No opencode call, no model context limit — works on multi-megabyte
+content. No coworker call, no model context limit — works on multi-megabyte
 transcripts.
 
 Modes:
@@ -11,13 +11,16 @@ Modes:
       extract-chat session.jsonl
       extract-chat session.jsonl -o /tmp/chat.txt
 
-  Question (delegates to opencode): with `--question`, opencode is asked
-  about the transcript. Subject to the model's context limit; large
-  transcripts will fail.
+  Question (delegates to a coworker LLM backend): with `--question`, the
+  backend is asked about the transcript. Subject to the model's context
+  limit; large transcripts will fail.
       extract-chat session.jsonl --question "List all decisions"
       extract-chat session.jsonl -o /tmp/answer.txt --question "..."
 
 Tokens prefixed with `@` are accepted as paths in either mode.
+
+The backend that actually runs the model is selected by ``--backend <name>``,
+the ``COWORKER_BACKEND`` env var, or the default (``opencode``).
 """
 
 from __future__ import annotations
@@ -27,7 +30,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from coworker_llm.opencode import OpenCodeError, run_opencode
+from coworker_llm.backend import CoworkerError, CoworkerRequest, get_backend
 
 
 DEFAULT_QUESTION = 'a concise summary of decisions and changes'
@@ -37,10 +40,11 @@ def _strip_at(tok: str) -> str:
     return tok[1:] if tok.startswith('@') and len(tok) > 1 else tok
 
 
-def parse_argv(argv: list[str]) -> tuple[str, str | None, str | None]:
-    """Return (transcript, output_path, question). Raises ValueError on missing transcript."""
+def parse_argv(argv: list[str]) -> tuple[str, str | None, str | None, str | None]:
+    """Return (transcript, output_path, question, backend). Raises ValueError on missing transcript."""
     transcript: str | None = None
     output: str | None = None
+    backend: str | None = None
     question_words: list[str] = []
     explicit_question: str | None = None
 
@@ -59,6 +63,12 @@ def parse_argv(argv: list[str]) -> tuple[str, str | None, str | None]:
             explicit_question = argv[i + 1]
             i += 2
             continue
+        if tok == '--backend':
+            if i + 1 >= len(argv):
+                raise ValueError('extract-chat: --backend requires a value')
+            backend = argv[i + 1]
+            i += 2
+            continue
         bare = _strip_at(tok)
         if transcript is None and (tok.startswith('@') or '/' in tok or '.' in tok):
             transcript = bare
@@ -72,7 +82,7 @@ def parse_argv(argv: list[str]) -> tuple[str, str | None, str | None]:
     question: str | None = explicit_question
     if question is None and question_words:
         question = ' '.join(question_words)
-    return transcript, output, question
+    return transcript, output, question, backend
 
 
 def _content_to_text(content: Any) -> str:
@@ -131,7 +141,7 @@ def extract_transcript(jsonl_path: str) -> str:
 
 
 def build_prompt(transcript: str, output: str | None, question: str | None) -> str:
-    """Used only by --question mode: ask opencode about the transcript."""
+    """Used only by --question mode: ask the backend about the transcript."""
     if output is not None and question:
         return (
             f'Read the Claude Code session transcript at {transcript}. '
@@ -147,7 +157,7 @@ def build_prompt(transcript: str, output: str | None, question: str | None) -> s
     return f'Read this Claude Code session transcript at {transcript} and produce {q}.'
 
 
-USAGE = 'usage: extract-chat <@path|path> [question words...] [-o <output>] [--question "<q>"]'
+USAGE = 'usage: extract-chat <@path|path> [question words...] [-o <output>] [--question "<q>"] [--backend <name>]'
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -159,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
         print(USAGE)
         return 0
     try:
-        transcript, output, question = parse_argv(args)
+        transcript, output, question, backend_name = parse_argv(args)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -180,28 +190,37 @@ def main(argv: list[str] | None = None) -> int:
             print(text)
         return 0
 
-    # Question mode: route through opencode.
+    # Question mode: route through the configured backend.
     prompt = build_prompt(transcript, output, question)
     work_dir: str | None = None
-    attach: tuple[str, ...] = ()
+    reads: tuple[str, ...] = ()
+    expected_target: str | None = None
     if output is not None:
         out_path = Path(output).resolve()
         out_path.parent.mkdir(parents=True, exist_ok=True)
         work_dir = str(out_path.parent)
-        attach = (str(Path(transcript).resolve()),)
+        reads = (str(Path(transcript).resolve()),)
+        expected_target = str(out_path)
+    request = CoworkerRequest(
+        prompt=prompt,
+        reads=reads,
+        writes_dir=work_dir,
+        expected_target=expected_target,
+    )
     try:
-        reply = run_opencode(prompt, dir=work_dir, attach=attach)
-    except OpenCodeError as exc:
+        backend = get_backend(backend_name)
+        result = backend.run(request)
+    except CoworkerError as exc:
         print(str(exc), file=sys.stderr)
         return exc.returncode or 1
-    if reply.strip():
-        print(reply)
+    if result.stdout.strip():
+        print(result.stdout)
     if output is not None:
         out_path = Path(output)
         if out_path.is_file():
             print(f'extract-chat: wrote {out_path.stat().st_size} bytes to {output}')
             return 0
-        print(f'extract-chat: opencode did not create the output file {output}', file=sys.stderr)
+        print(f'extract-chat: coworker did not create the output file {output}', file=sys.stderr)
         return 1
     return 0
 

@@ -1,4 +1,4 @@
-"""`/ask-llm`: bulk file Q&A delegated to opencode.
+"""`/ask-llm`: bulk file Q&A delegated to a coworker LLM backend.
 
 Three invocation styles, all supported:
 
@@ -18,6 +18,9 @@ Three invocation styles, all supported:
 The two flag-mode forms are mutually exclusive: exactly one of `--question`
 or `--question-file` is required when any flag is used. If no flag tokens
 appear, freeform mode is used.
+
+The backend that actually runs the model is selected by ``--backend <name>``,
+the ``COWORKER_BACKEND`` env var, or the default (``opencode``).
 """
 
 from __future__ import annotations
@@ -26,28 +29,39 @@ import argparse
 import sys
 from pathlib import Path
 
-from coworker_llm.opencode import OpenCodeError, run_opencode
+from coworker_llm.backend import CoworkerError, CoworkerRequest, get_backend
 
 
 FLAG_TOKENS = {'--paths', '--question', '-q', '--question-file'}
 
 
-def parse_freeform(argv: list[str]) -> tuple[list[str], str]:
+def parse_freeform(argv: list[str]) -> tuple[list[str], str, str | None]:
     paths: list[str] = []
     words: list[str] = []
-    for tok in argv:
+    backend: str | None = None
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        if tok == '--backend':
+            if i + 1 >= len(argv):
+                raise ValueError('ask-llm: --backend requires a value')
+            backend = argv[i + 1]
+            i += 2
+            continue
         if tok.startswith('@') and len(tok) > 1:
             bare = tok[1:]
             paths.append(bare)
             words.append(bare)
         else:
             words.append(tok)
-    return paths, ' '.join(words)
+        i += 1
+    return paths, ' '.join(words), backend
 
 
-def parse_flags(argv: list[str]) -> tuple[list[str], str]:
+def parse_flags(argv: list[str]) -> tuple[list[str], str, str | None]:
     parser = argparse.ArgumentParser(prog='ask-llm', add_help=False)
     parser.add_argument('--paths', nargs='*', default=[])
+    parser.add_argument('--backend', default=None)
     question_group = parser.add_mutually_exclusive_group(required=True)
     question_group.add_argument('--question', '-q')
     question_group.add_argument('--question-file')
@@ -58,7 +72,7 @@ def parse_flags(argv: list[str]) -> tuple[list[str], str]:
         question = sys.stdin.read()
     else:
         question = Path(args.question_file).read_text()
-    return list(args.paths), question
+    return list(args.paths), question, args.backend
 
 
 def build_prompt(paths: list[str], question: str) -> str:
@@ -72,6 +86,7 @@ USAGE = (
     'usage: ask-llm <words> [@path ...]                          (freeform)\n'
     '       ask-llm --paths <p1> <p2>... --question "<q>"        (flags)\n'
     '       ask-llm --paths <p1> <p2>... --question-file <path>  (long Q)\n'
+    'all forms accept --backend <name> (or COWORKER_BACKEND env)\n'
     'tip: for long questions containing markdown backticks, $(...) or other\n'
     '     shell-active characters, prefer --question-file <path> to bypass\n'
     '     shell quoting entirely. Use --question-file - to read from stdin.'
@@ -89,18 +104,25 @@ def main(argv: list[str] | None = None) -> int:
 
     use_flags = any(tok in FLAG_TOKENS for tok in args)
     try:
-        paths, question = parse_flags(args) if use_flags else parse_freeform(args)
+        if use_flags:
+            paths, question, backend_name = parse_flags(args)
+        else:
+            paths, question, backend_name = parse_freeform(args)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     except SystemExit as exc:
         return int(exc.code) if isinstance(exc.code, int) else 2
 
     prompt = build_prompt(paths, question)
-    attach = tuple(paths)
+    request = CoworkerRequest(prompt=prompt, reads=tuple(paths))
     try:
-        reply = run_opencode(prompt, attach=attach)
-    except OpenCodeError as exc:
+        backend = get_backend(backend_name)
+        result = backend.run(request)
+    except CoworkerError as exc:
         print(str(exc), file=sys.stderr)
         return exc.returncode or 1
-    print(reply)
+    print(result.stdout)
     return 0
 
 
