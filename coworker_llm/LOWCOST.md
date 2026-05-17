@@ -24,8 +24,33 @@ For files >400 lines, or when you'd otherwise read 3+ files:
 ```
   /ask-llm --paths <f1> <f2>... --question "<short question>"
   /ask-llm --paths <f1> <f2>... --question-file /tmp/q.md
+  /ask-llm --paths-from /tmp/files.txt --question-file /tmp/q.md
+  /ask-llm --paths-from /tmp/files.txt --question-file /tmp/q.md --max-words 1500
 ```
 Returns a structured summary. Use that instead of reading files yourself.
+
+**Operational guidance for real-world load (from production audits):**
+
+- **Bash word-splitting hazard**: when building path lists in shell, prefer
+  `--paths-from <file>` (one path per line) over `--paths $files`. The bare
+  `$files` indirection occasionally concatenates entries and silently picks
+  up the wrong file set. If you must use `--paths`, expand via a quoted bash
+  array: `files=( $(cat list) )` then `--paths "${files[@]}"`.
+- **Output sizing**: with >50KB total input, set `--max-words 1500` (or
+  lower). Empirically (opencode/haiku): 55KB + 1-word ask ≈ 31s; 55KB +
+  2000-word ask ≈ 140s; the curve gets steep past 50KB. Map-reduce in
+  chunks of ≤16 inputs per call rather than asking for a single >2000-word
+  synthesis. The CLI prints a preflight warning whenever input is >50KB and
+  no `--max-words` is set; pass `--no-warn` to silence.
+- **Observability**: every call writes one stderr line of the form
+  `ask-llm: backend=NAME reads=N in=YKB out=ZKB wall=Ws`. Use it to
+  calibrate any outer `timeout` wrapper — pick a budget from real data
+  instead of guessing.
+- **Skill vs CLI in chains**: invoking `/ask-llm` is a *single tool call*.
+  When you're driving a multi-step pipeline (extract → ask → reduce), call
+  the bare CLIs from a script with stdout redirects, not nested skill
+  invocations — sub-agents tend to interpret a single skill's success
+  output as "task done" and bail out of the pipeline.
 
 ### /llm-write — boilerplate generation
 For tests, configs, docstrings, repetitive patterns:

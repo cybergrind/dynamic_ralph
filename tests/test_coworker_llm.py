@@ -163,6 +163,138 @@ class TestAskLlmFlags:
         assert rc == 0
         mock.assert_called_with('alt')
 
+    def test_paths_from_file_reads_one_per_line(self, tmp_path: Path):
+        path_list = tmp_path / 'paths.txt'
+        path_list.write_text('first file.py\nsecond.py\n# a comment\n\nthird.py\n')
+        fake = FakeBackend()
+        with _patch_backend(ask_llm, fake):
+            rc = ask_llm.main(['--paths-from', str(path_list), '--question', 'q?'])
+        assert rc == 0
+        assert fake.request.reads == ('first file.py', 'second.py', 'third.py')
+        assert 'first file.py' in fake.request.prompt
+        assert 'second.py' in fake.request.prompt
+
+    def test_paths_from_file_combines_with_paths(self, tmp_path: Path):
+        path_list = tmp_path / 'paths.txt'
+        path_list.write_text('extra1.py\nextra2.py\n')
+        fake = FakeBackend()
+        with _patch_backend(ask_llm, fake):
+            rc = ask_llm.main(
+                ['--paths', 'a.py', '--paths-from', str(path_list), '--question', 'q?'],
+            )
+        assert rc == 0
+        assert fake.request.reads == ('a.py', 'extra1.py', 'extra2.py')
+
+    def test_paths_from_stdin(self, monkeypatch: pytest.MonkeyPatch):
+        import io
+
+        monkeypatch.setattr('sys.stdin', io.StringIO('s1.py\ns2.py\n'))
+        fake = FakeBackend()
+        with _patch_backend(ask_llm, fake):
+            rc = ask_llm.main(['--paths-from', '-', '--question', 'q?'])
+        assert rc == 0
+        assert fake.request.reads == ('s1.py', 's2.py')
+
+    def test_max_words_appends_word_limit_to_prompt(self):
+        fake = FakeBackend()
+        with _patch_backend(ask_llm, fake):
+            rc = ask_llm.main(['--paths', 'a.py', '--question', 'q?', '--max-words', '1500'])
+        assert rc == 0
+        prompt = fake.request.prompt
+        assert '1500' in prompt
+        assert 'word' in prompt.lower()
+
+
+class TestAskLlmLatencyLog:
+    """Every call emits a one-line stderr observability summary."""
+
+    def test_logs_wall_in_out_to_stderr(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        f = tmp_path / 'big.log'
+        f.write_text('x' * 8000)
+        fake = FakeBackend(stdout='answer body')
+        with _patch_backend(ask_llm, fake):
+            rc = ask_llm.main(['--paths', str(f), '--question', 'q?'])
+        assert rc == 0
+        err = capsys.readouterr().err
+        assert 'ask-llm:' in err
+        assert 'wall=' in err
+        assert 'in=' in err
+        assert 'out=' in err
+
+    def test_log_handles_missing_path_without_crashing(self, capsys: pytest.CaptureFixture[str]):
+        fake = FakeBackend(stdout='answer')
+        with _patch_backend(ask_llm, fake):
+            rc = ask_llm.main(['--paths', '/no/such/file.log', '--question', 'q?'])
+        assert rc == 0
+        err = capsys.readouterr().err
+        assert 'ask-llm:' in err
+        assert 'wall=' in err
+
+
+class TestAskLlmPreflightWarning:
+    """Large inputs without --max-words get a one-line stderr warning."""
+
+    def test_warns_when_inputs_large_and_no_max_words(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ):
+        f = tmp_path / 'huge.log'
+        f.write_text('x' * 60000)
+        fake = FakeBackend(stdout='ok')
+        with _patch_backend(ask_llm, fake):
+            rc = ask_llm.main(['--paths', str(f), '--question', 'q?'])
+        assert rc == 0
+        err = capsys.readouterr().err
+        assert 'max-words' in err
+        assert 'warning' in err.lower() or 'warn' in err.lower()
+
+    def test_no_warning_when_max_words_set(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ):
+        f = tmp_path / 'huge.log'
+        f.write_text('x' * 60000)
+        fake = FakeBackend(stdout='ok')
+        with _patch_backend(ask_llm, fake):
+            rc = ask_llm.main(
+                ['--paths', str(f), '--question', 'q?', '--max-words', '1500'],
+            )
+        assert rc == 0
+        err = capsys.readouterr().err
+        assert 'warning' not in err.lower()
+
+    def test_no_warning_when_inputs_small(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ):
+        f = tmp_path / 'small.log'
+        f.write_text('x' * 1000)
+        fake = FakeBackend(stdout='ok')
+        with _patch_backend(ask_llm, fake):
+            rc = ask_llm.main(['--paths', str(f), '--question', 'q?'])
+        assert rc == 0
+        err = capsys.readouterr().err
+        assert 'warning' not in err.lower()
+
+    def test_no_warn_flag_suppresses_warning(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ):
+        f = tmp_path / 'huge.log'
+        f.write_text('x' * 60000)
+        fake = FakeBackend(stdout='ok')
+        with _patch_backend(ask_llm, fake):
+            rc = ask_llm.main(
+                ['--paths', str(f), '--question', 'q?', '--no-warn'],
+            )
+        assert rc == 0
+        err = capsys.readouterr().err
+        assert 'warning' not in err.lower()
+
 
 class TestLlmWriteFlags:
     def test_build_prompt_includes_spec_context_target(self):
